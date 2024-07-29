@@ -1,0 +1,434 @@
+{
+    "!include": ["AE/default.json", "BRM/default.json"],
+	"target_device": "gpu",
+	"target_bpps": [12, 25, 50, 75, 100],
+    "model": {
+		"tool": "CCS_SGMM",
+		"CCS_SGMM": {
+			"Ntools": 4,
+			"tools_common": {
+				"beta_list": [0.0005, 0.001, 0.002, 0.004, 0.007, 0.01, 0.012, 0.015, 0.03, 0.05, 0.075, 0.1, 0.2, 0.5, 0.75, 1.0, 2.0, 3.0],
+				"sigma_quant_min": 0.11,
+				"sigma_quant_max": 100,
+				"sigma_quant_level": 35,
+				"sigma_bound_offset": 0.5,
+				"model_common": {
+					"common_modules": {
+						"ckpt_model_name": "VM_common_int",
+						"clipping_mode_opt": 0, 
+                        "hyper_encoder_type": "basic",
+						"hyper_decoder_type": "basic",
+						"hyper_scale_decoder_type": "hsd"
+					},
+					"decoder": {
+						"bop_prim": {
+							"ckpt_model_name": "VM_bop"
+						},
+						"hop_prim": {
+							"ckpt_model_name": "VM_hop"
+						},
+						"sop_prim": {
+							"ckpt_model_name": "VM_sop"
+						},
+						"bop_sec": {
+							"ckpt_model_name": "VM_bop"
+						},
+						"hop_sec": {
+							"ckpt_model_name": "VM_hop"
+						},
+						"sop_sec": {
+							"ckpt_model_name": "VM_sop"
+						}				
+					},
+					"encoder": {
+						"bop_prim": {
+							"ckpt_model_name": "VM_bop"
+						},
+						"hop_prim": {
+							"ckpt_model_name": "VM_hop"
+						},
+						"bop_sec": {
+							"ckpt_model_name": "VM_bop"
+						},
+						"hop_sec": {
+							"ckpt_model_name": "VM_hop"
+						}
+					}										
+				},
+				"model_y": {
+                    "common_modules": {
+                        "use_context_module": true
+                    }
+				}
+			},
+			"tools_0":
+			{
+                "base_model_beta": 0.002,
+				"model_common":{
+					"ls_processing": {
+						"lsbs": {
+							"scale0_lsbs": [23, 0, 46],
+							"scale1_lsbs": [28, 0, 56]
+						}
+					},
+					"common_modules": {					
+						"quantizer": {
+							"rvs": {
+								"threshold_rvs_id1": [4325, 7471, 18667],
+								"rvs_scale_list_id1": [115, 125, 146, 160]
+							}
+						}
+					}
+				},
+				"model_y": {
+					"common_modules": {
+						"ckpt_files": ["Y_0.002.pth"]
+					},
+					"decoder": {
+						"bop_prim": {
+            				"ckpt_files": ["decoder_Y_0.002.pth"]
+                        },
+						"hop_prim": {
+            				"ckpt_files": ["decoder_Y_0.002.pth"]
+                        },
+						"sop_prim": {
+            				"ckpt_files": ["decoder_Y_0.002.pth"]
+                        }
+                    },
+					"encoder": {
+						"bop_prim": {
+            				"ckpt_files": ["encoder_Y_0.002.pth"]
+                        },
+						"hop_prim": {
+            				"ckpt_files": ["encoder_Y_0.002.pth"]
+                        }
+                    }
+                },
+				"model_uv": {
+					"common_modules": {				
+						"ckpt_files": ["UV_0.002.pth"]
+					},
+					"decoder": {
+						"bop_sec": {
+            				"ckpt_files": ["decoder_UV_0.002.pth"]
+                        },
+						"hop_sec": {
+            				"ckpt_files": ["decoder_UV_0.002.pth"]
+                        },
+						"sop_sec": {
+            				"ckpt_files": ["decoder_UV_0.002.pth"]
+                        }
+                    },
+					"encoder": {
+						"bop_sec": {
+            				"ckpt_files": ["encoder_UV_0.002.pth"]
+                        },
+						"hop_sec": {
+            				"ckpt_files": ["encoder_UV_0.002.pth"]
+                        }
+                    }
+                }
+			},
+			"tools_1":
+			{
+                "base_model_beta": 0.012,
+				"model_common":{
+					"ls_processing": {
+						"lsbs": {
+							"scale0_lsbs": [17, 0, 34],
+							"scale1_lsbs": [23, 0, 46]
+						}
+					},
+					"common_modules": {					
+						"quantizer": {
+							"rvs": {
+								"threshold_rvs_id1": [4325, 6575, 17855],
+								"rvs_scale_list_id1": [115, 122, 125, 160]
+							}
+						}
+					}
+				},
+				"model_y": {
+					"common_modules": {				
+						"ckpt_files": ["Y_0.012.pth"]
+					},
+					"decoder": {
+						"bop_prim": {
+            				"ckpt_files": ["decoder_Y_0.012.pth"]
+                        },
+						"hop_prim": {
+            				"ckpt_files": ["decoder_Y_0.012.pth"]
+                        },
+						"sop_prim": {
+            				"ckpt_files": ["decoder_Y_0.012.pth"]
+                        }
+                    },
+					"encoder": {
+						"bop_prim": {
+            				"ckpt_files": ["encoder_Y_0.012.pth"]
+                        },
+						"hop_prim": {
+            				"ckpt_files": ["encoder_Y_0.012.pth"]
+                        }
+                    }
+                },
+				"model_uv": {
+					"common_modules": {				
+						"ckpt_files": ["UV_0.012.pth"]
+					},
+					"decoder": {
+						"bop_sec": {
+            				"ckpt_files": ["decoder_UV_0.012.pth"]
+                        },
+						"hop_sec": {
+            				"ckpt_files": ["decoder_UV_0.012.pth"]
+                        },
+						"sop_sec": {
+            				"ckpt_files": ["decoder_UV_0.012.pth"]
+                        }
+                    },
+					"encoder": {
+						"bop_sec": {
+            				"ckpt_files": ["encoder_UV_0.012.pth"]
+                        },
+						"hop_sec": {
+            				"ckpt_files": ["encoder_UV_0.012.pth"]
+                        }
+                    }
+                }
+			},
+			"tools_2":
+			{
+                "base_model_beta": 0.075,
+				"model_common":{
+					"ls_processing": {
+						"lsbs": {
+							"scale0_lsbs": [12, 0, 23],
+							"scale1_lsbs": [17, 0, 34]
+						}
+					},
+					"common_modules": {					
+						"quantizer": {
+							"rvs": {
+								"threshold_rvs_id1": [4325, 7782, 18599],
+								"rvs_scale_list_id1": [115, 130, 156, 175]
+							}
+						}	
+					}
+				},
+				"model_y": {
+					"common_modules": {				
+						"ckpt_files": ["Y_0.075.pth"]
+					},
+					"decoder": {
+						"bop_prim": {
+            				"ckpt_files": ["decoder_Y_0.075.pth"]
+                        },
+						"hop_prim": {
+            				"ckpt_files": ["decoder_Y_0.075.pth"]
+                        },
+						"sop_prim": {
+            				"ckpt_files": ["decoder_Y_0.075.pth"]
+                        }
+                    },
+					"encoder": {
+						"bop_prim": {
+            				"ckpt_files": ["encoder_Y_0.075.pth"]
+                        },
+						"hop_prim": {
+            				"ckpt_files": ["encoder_Y_0.075.pth"]
+                        }
+                    }					
+                },
+				"model_uv": {
+					"common_modules": {				
+						"ckpt_files": ["UV_0.075.pth"]
+					},
+					"decoder": {
+						"bop_sec": {
+            				"ckpt_files": ["decoder_UV_0.075.pth"]
+                        },
+						"hop_sec": {
+            				"ckpt_files": ["decoder_UV_0.075.pth"]
+                        },
+						"sop_sec": {
+            				"ckpt_files": ["decoder_UV_0.075.pth"]
+                        }
+                    },
+					"encoder": {
+						"bop_sec": {
+            				"ckpt_files": ["encoder_UV_0.075.pth"]
+                        },
+						"hop_sec": {
+            				"ckpt_files": ["encoder_UV_0.075.pth"]
+                        }
+                    }
+                }
+			},
+			"tools_3":
+			{
+                "base_model_beta": 0.5,
+				"model_common": {
+					"ls_processing": {
+						"lsbs": {
+							"scale0_lsbs": [ 9, 0, 28],
+							"scale1_lsbs": [12, 0, 26]
+						}
+					},
+					"common_modules": {
+						"quantizer": {
+							"rvs": {
+								"threshold_rvs_id1": [4325, 6849, 17855],
+								"rvs_scale_list_id1": [115, 130, 156, 160]
+							}
+						}
+					}
+				},
+				"model_y": {
+					"common_modules": {				
+						"ckpt_files": ["Y_0.5.pth"]
+					},
+					"decoder": {
+						"bop_prim": {
+            				"ckpt_files": ["decoder_Y_0.5.pth"]
+                        },
+						"hop_prim": {
+            				"ckpt_files": ["decoder_Y_0.5.pth"]
+                        },
+						"sop_prim": {
+            				"ckpt_files": ["decoder_Y_0.5.pth"]
+                        }
+                    },
+					"encoder": {
+						"bop_prim": {
+            				"ckpt_files": ["encoder_Y_0.5.pth"]
+                        },
+						"hop_prim": {
+            				"ckpt_files": ["encoder_Y_0.5.pth"]
+                        }
+                    }
+                },
+				"model_uv": {
+					"common_modules": {				
+						"ckpt_files": ["UV_0.5.pth"]
+					},
+					"decoder": {
+						"bop_sec": {
+            				"ckpt_files": ["decoder_UV_0.5.pth"]
+                        },
+						"hop_sec": {
+            				"ckpt_files": ["decoder_UV_0.5.pth"]
+                        },
+						"sop_sec": {
+            				"ckpt_files": ["decoder_UV_0.5.pth"]
+                        }
+                    },
+					"encoder": {
+						"bop_sec": {
+            				"ckpt_files": ["encoder_UV_0.5.pth"]
+                        },
+						"hop_sec": {
+            				"ckpt_files": ["encoder_UV_0.5.pth"]
+                        }
+                    }
+                }
+			}            
+		}   
+    },
+    "post_filters": {
+		"tools": ["EFElinear","eICCI","EFEnonlinear","LEF"],
+		"eICCI": {
+			"ckpt_model_name": "eICCI_bophop_2d020448_20240229",
+			"in_nc": 1,
+			"out_nc": 1,
+			"nf": 48,
+			"nbY": 2,
+			"nbUV": 4,
+			"y_short_list":{
+				"sop":{
+					"0": [5, 6],
+					"1": [2, 6],
+					"2": [2, 7],
+					"3": [3, 8],
+					"4": [3, 4]
+				},
+				"bop":{
+					"0": [5, 6],
+					"1": [3, 6], 
+					"2": [2, 7], 
+					"3": [3, 8], 
+					"4": [4, 9]
+				},
+				"hop":{
+					"0": [5, 6], 
+					"1": [6, 8], 
+					"2": [2, 7], 
+					"3": [3, 9], 
+					"4": [4, 9]
+				}   
+			},
+			"uv_short_list":{
+				"sop":{
+					"0": [0, 1], 
+					"1": [0, 1], 
+					"2": [1, 2], 
+					"3": [1, 2], 
+					"4": [3, 4]
+				},
+				"bop":{
+					"0": [0, 1], 
+					"1": [1, 2], 
+					"2": [2, 3], 
+					"3": [2, 3], 
+					"4": [1, 4]
+				},
+				"hop":{
+					"0": [0, 2], 
+					"1": [1, 3], 
+					"2": [2, 3], 
+					"3": [2, 3], 
+					"4": [3, 4]
+				}   
+			},
+			"ckpt_files": [
+						"eicci_bop_mse012_300k.pth",
+						"eicci_bop_mse025_300k.pth",
+						"eicci_bop_mse050_300k.pth",
+						"eicci_bop_mse075_300k.pth",
+						"eicci_bop_mse100_300k.pth",
+						"eicci_bop_mss012_300k.pth",
+						"eicci_bop_mss025_300k.pth",
+						"eicci_bop_mss050_300k.pth",
+						"eicci_bop_mss075_300k.pth",
+						"eicci_bop_mss100_300k.pth",
+						"eicci_hop_mse012_300k.pth",
+						"eicci_hop_mse025_300k.pth",
+						"eicci_hop_mse050_300k.pth",
+						"eicci_hop_mse075_300k.pth",
+						"eicci_hop_mse100_300k.pth",
+						"eicci_hop_mss012_300k.pth",
+						"eicci_hop_mss025_300k.pth",
+						"eicci_hop_mss050_300k.pth",
+						"eicci_hop_mss075_300k.pth",
+						"eicci_hop_mss100_300k.pth"
+					]
+		},
+		"icci": {
+			"ckpt_model_name": "ICCI_r2",
+			"ckpt_files": ["icci_vm_mse006_312000_G.pth",
+						"icci_vm_mse012_323000_G.pth",
+						"icci_vm_mse025_486000_G.pth",
+						"icci_vm_mse050_288000_G.pth",
+						"icci_vm_msssim006_520000_G.pth",
+						"icci_vm_msssim012_472000_G.pth",
+						"icci_vm_msssim025_398000_G.pth",
+						"icci_vm_msssim050_306000_G.pth",
+						"icci_vm_msssim075_295000_G.pth"
+					]
+		}
+
+	},
+	"color_processing": {
+		"tools": ["colour_transform", "chroma_transform"]
+	}
+}

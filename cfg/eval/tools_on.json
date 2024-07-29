@@ -1,0 +1,9 @@
+{
+    "!include": ["base.json"],
+    "post_args": [],
+    "configurations": {
+        "tools_on-GPU": {
+            "--cfg": ["./cfg/tools_on.json"]
+        }      
+    }
+}

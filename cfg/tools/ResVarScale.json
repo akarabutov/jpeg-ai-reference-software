@@ -1,0 +1,39 @@
+{
+
+	"model": {
+		"CCS_SGMM":{
+			"tools_common": {
+				"model_common": {
+					"common_modules": {					
+						"quantizer": {
+							"rvs": {
+								"cwg_enabled":1,
+								"rvs_enabled":1
+							}
+						}
+					}
+				},
+				"model_y": {
+					"common_modules": {					
+						"quantizer": {
+							"rvs": {
+								"cnum_list": [5, 24, 35, 64, 64]
+							}
+						}
+					}
+				},				
+				"model_uv":
+				{
+					"common_modules": {					
+						"quantizer": {
+							"rvs": {
+								"cnum_list": [10, 10, 10, 10, 10]
+							}
+						}
+					}
+				}				
+
+			}
+		}
+    }
+}

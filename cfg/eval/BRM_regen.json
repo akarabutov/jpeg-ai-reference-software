@@ -1,0 +1,12 @@
+{
+    "!include": ["base.json"],
+    "post_args": [],
+    "configurations": {
+        "tools_off_BRM": {
+            "--cfg": ["./cfg/tools_off.json", "./cfg/BRM/regen_list.json"]
+        },
+        "tools_on_BRM": {
+            "--cfg": ["./cfg/tools_on.json", "./cfg/BRM/regen_list.json"]
+        }                   
+    }
+}

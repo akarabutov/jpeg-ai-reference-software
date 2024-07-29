@@ -1,0 +1,4 @@
+outs:
+- md5: 45f1a92a7d686e32f1d63f38c6069da9
+  size: 4602572
+  path: UV_0.012.pth

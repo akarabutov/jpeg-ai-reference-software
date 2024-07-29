@@ -1,0 +1,15 @@
+{
+	"post_filters": {
+		"eICCI": {
+			"enabled": 1,
+			"loss_type": "mixed",
+			"luma_loss_weights": [5.0, 1.0],
+			"chroma_loss_weights": [1.0, 0.0],
+			"process_short_list": 1,
+			"tile_manager": {
+				"numSamplesPerTile": 4194304,
+				"numSamplesTileOverlap": 48
+			}
+		}
+	}
+}

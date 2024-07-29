@@ -1,0 +1,10 @@
+{
+	"model": {
+		"rdlr": {
+			"lossTypeBDcurveSlope_psnrY_slope": 71.61181640625,
+			"lossTypeBDcurveSlope_psnrU_slope": 83.97347259521484,
+			"lossTypeBDcurveSlope_psnrV_slope": 82.97191619873047,
+			"lossTypeBDcurveSlope_msssimY_slope": 0.2965768277645111
+		}
+	}
+}

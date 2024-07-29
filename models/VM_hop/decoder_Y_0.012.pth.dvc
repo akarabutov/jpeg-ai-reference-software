@@ -1,0 +1,4 @@
+outs:
+- md5: 5ce1b5c8e845b9206653027ef8f3bb3a
+  size: 13385893
+  path: decoder_Y_0.012.pth

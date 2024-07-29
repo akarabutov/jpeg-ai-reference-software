@@ -1,0 +1,39 @@
+{
+    "beta_2_gpus": {
+        "0.002": "0,1",
+        "0.012": "2,3",
+        "0.075": "4,5",
+        "0.5": "6,7"
+    },
+    "beta_2_msssim_weight": {
+        "0.002": "0.5",
+        "0.012": "0.5",
+        "0.075": "0.4",
+        "0.5": "0.3"
+    },
+    "beta_2_betaList": {
+        "0.002": "0.002",
+        "0.012": "0.03",
+        "0.075": "0.2",
+        "0.5": "1.0"
+    },
+    "beta_2_training_list": {
+        "0.002": "cfg/training_list/Q1_training_list.txt",
+        "0.012": "cfg/training_list/Q2_training_list.txt",
+        "0.075": "cfg/training_list/Q3_training_list.txt",
+        "0.5": "cfg/training_list/Q4_training_list.txt"
+    },
+    "beta_2_loss_factors": {
+        "0.002": "0.6667_0.1667_0.1667",
+        "0.012": "0.6667_0.1667_0.1667",
+        "0.075": "0.7143_0.1429_0.2857",
+        "0.5": "0.6667_0.1667_0.3333"
+    },
+    "stages": [
+        "MSE_FixedRate_64",
+        "Mixed_FixedRate_36",
+        "Mixed_FixedRate_OnlyDec_20",
+        "MSE_VariableRate_12",
+        "Data_Collection"
+    ]
+}

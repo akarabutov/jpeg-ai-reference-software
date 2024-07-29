@@ -1,0 +1,4 @@
+outs:
+- md5: 7ac897437cf1dce3a9426719b96be332
+  size: 627423
+  path: eicci_bop_mse100_300k.pth

@@ -1,0 +1,4 @@
+outs:
+- md5: 54c78991f00562bba26ea3b158af05bb
+  size: 1589060
+  path: decoder_UV_0.075.pth

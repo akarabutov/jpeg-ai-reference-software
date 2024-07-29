@@ -1,0 +1,23 @@
+{
+	"model": {
+		"CCS_SGMM":{
+			"tools_common":
+			{
+				"model_y": {
+					"encoder": {
+						"tool": "bop_prim"
+					}					
+				},
+				"model_uv": {
+					"encoder": {
+						"tool": "bop_sec"
+					}	                    
+				}
+			}
+        },
+		"bitrate_matcher":
+		{
+			"bitrate_config_path": "cfg/betas/bop"
+		}	
+    }
+}

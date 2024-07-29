@@ -1,0 +1,30 @@
+{
+
+	"model": {
+		"CCS_SGMM":{
+			"tools_common": {
+				"region_partitioning_flag": 1,
+				"NumSamplesInRegion": 1048576,
+				"hyper_decoder_overlap_in_latent_samples": 2,
+				"mcm_overlap_in_latent_samples": 8,
+				"region_residual_in_its_own_substream_flag": 1,
+				"model_y": {
+					"tile_manager_enc": {
+						"numSamplesTileOverlap": 128
+					},
+					"tile_manager_synthesis": {
+						"numSamplesTileOverlap": 128
+					}
+				},
+				"model_uv": {
+					"tile_manager_enc": {
+						"numSamplesTileOverlap": 64
+					},
+					"tile_manager_synthesis": {
+						"numSamplesTileOverlap": 128
+					}
+				}
+			}
+        }
+    }
+}

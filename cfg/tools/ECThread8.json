@@ -1,0 +1,17 @@
+{
+	"model": {
+		"tool": "CCS_SGMM",
+		"CCS_SGMM":{
+			"tools_common": {
+				"num_threads_z": 8,
+				"model_common": {
+					"num_threads_r": 8
+				},
+				"qual_map": {
+					"num_threads": 8
+				}
+			}
+		}
+	}
+	
+}

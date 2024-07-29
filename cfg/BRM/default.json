@@ -1,0 +1,28 @@
+{
+    "model": {
+        "CCS_SGMM":{
+            "tools_0":
+            {
+                "base_model_beta": 0.002
+            },
+            "tools_1":
+            {
+                "base_model_beta": 0.012
+            },
+            "tools_2":
+            {
+                "base_model_beta": 0.075
+            },
+            "tools_3":
+            {
+                "base_model_beta": 0.5
+            }
+        },        
+        "bitrate_matcher":{
+			"independent_beta_UV": 1,
+			"enabled": 1,
+            "default_models":[0, 1, 2, 2, 3],
+            "default_beta_disp_log":[0, 0, -184, 0, 0]
+        }
+    }
+}

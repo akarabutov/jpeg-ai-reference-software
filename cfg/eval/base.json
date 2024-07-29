@@ -1,0 +1,4 @@
+{
+    "oper_points": ["bop", "hop", "bopEnc_sopDec"],
+    "pre_args": ["--coding_type", "enc_dec"]
+}

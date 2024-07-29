@@ -1,0 +1,4 @@
+outs:
+- md5: 9d3c862300e2ad2ddae45f4fc4768d52
+  size: 627423
+  path: eicci_bop_mss100_300k.pth

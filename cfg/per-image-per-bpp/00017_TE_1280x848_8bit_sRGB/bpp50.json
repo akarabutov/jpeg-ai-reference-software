@@ -1,0 +1,16 @@
+{
+	"model": {
+		"rdlr": {
+			"lossTypeBDcurveSlope_psnrY_slope": 78.33753204345703,
+			"lossTypeBDcurveSlope_psnrU_slope": 74.12640380859375,
+			"lossTypeBDcurveSlope_psnrV_slope": 78.12500762939453,
+			"lossTypeBDcurveSlope_msssimY_slope": 0.8754801750183105
+		}
+	},
+	"post_filters": {
+		"EFElinear": {"enabled": 0, "DCTIF_only": 0},
+        "EFEnonlinear": {"enabled": 0},
+        "LEF": {"enabled": 0},
+        "eICCI": {"enabled": 0 }
+	}
+}

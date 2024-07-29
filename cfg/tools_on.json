@@ -1,0 +1,12 @@
+{
+	"!include": ["CTC.json", 
+				 "tools/LSBS.json",
+				 "tools/ResVarScale.json",
+				 "tools/EnhancementFilters.json"
+				],
+	"model": {	
+		"bitrate_matcher":{
+			"bitrate_config_name":"betas_tools_on.txt"
+		}
+	}
+}

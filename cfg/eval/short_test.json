@@ -1,0 +1,16 @@
+{
+    "!include": ["base.json"],
+    "pre_args": ["--coding_type", "enc"],
+    "post_args": [],
+    "configurations": {
+        "tools_off-GPU": {
+            "--cfg": "./cfg/tools_off.json"
+        },
+        "tools_off-LH": {
+            "--cfg": ["./cfg/tools_off.json", "./cfg/AE/lh.json"]
+        },
+        "tools_on-GPU": {
+            "--cfg": "./cfg/tools_on.json"
+        }
+    }
+}

@@ -1,0 +1,12 @@
+{
+    "!include": ["base.json"],
+    "pre_args": ["--coding_type", "dec", 
+                 "--cfg", "./cfg/pipeline.json", 
+                 "--force_encdec_match", "1"],
+    "post_args": ["--resume_eval"],
+    "append_op_config": false,
+    "configurations": {
+        "tools_off-GPU": { },
+        "tools_on-GPU": { }
+    }
+}

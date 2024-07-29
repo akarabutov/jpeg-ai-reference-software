@@ -1,0 +1,6 @@
+{
+	"post_filters": {
+		"eICCI": {"enabled": 0 },
+        "LEF": {"enabled": 0}
+	}
+}

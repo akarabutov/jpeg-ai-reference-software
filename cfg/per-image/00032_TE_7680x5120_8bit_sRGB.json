@@ -1,0 +1,16 @@
+{
+	"model": {
+		"CCS_SGMM":{
+			"numSamplesPerLumaTileEncoder": 3000000,
+			"numSamplesPerLumaTileDecoder": 3000000,
+			"numSamplesPerChromaTileEncoder": 3000000,
+			"numSamplesPerChromaTileDecoder": 3000000
+		},
+		"rdlr": {
+			"numSamplesPerLumaTile": 262144,
+			"numSamplesPerChromaTile": 262144,
+			"numIteZLuma": -3,
+			"numIteZChroma": -3
+		}
+	}
+}

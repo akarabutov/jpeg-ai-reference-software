@@ -1,0 +1,11 @@
+{
+	"target_bpps": [12, 25, 50, 75],
+    "model": {
+        "bitrate_matcher":{
+			"independent_beta_UV": 1,
+			"enabled": 1,
+            "default_models":[0, 1, 2, 3, 3],
+            "default_beta_disp_log":[0, 0, 0, 0, 180]
+        }
+    }
+}

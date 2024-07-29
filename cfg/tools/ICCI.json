@@ -1,0 +1,14 @@
+{
+	"post_filters": {
+		"icci": {
+			"enabled": 1,
+			"loss_type": "mixed",
+			"luma_loss_weights": [7.0, 1.0],
+			"chroma_loss_weights": [1.0, 0.0],
+			"tile_manager": {
+				"numSamplesPerTile": 4194304,
+				"numSamplesTileOverlap": 48
+			}
+		}
+	}
+}

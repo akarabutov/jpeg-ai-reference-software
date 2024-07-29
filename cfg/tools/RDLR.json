@@ -1,0 +1,20 @@
+{
+	"model": {
+		"rdlr":{
+			"enabled": 1,
+			"numSamples": 4200000,
+			"numSamplesPerLumaTile": 4200000,
+			"numSamplesPerChromaTile": 4200000,
+			"numIteZLuma": 0,
+			"numIteZChroma": 0,
+			"numIteYLuma":   8,
+			"numIteYChroma": 0
+		},
+		"CCS_SGMM":{
+			"numSamplesPerLumaTileEncoder": 2359296,
+			"numSamplesPerChromaTileEncoder": 2359296,
+			"numSamplesPerLumaTileDecoder": 640000,
+			"numSamplesPerChromaTileDecoder": 640000
+		}
+    }
+}

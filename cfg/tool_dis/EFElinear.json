@@ -1,0 +1,4 @@
+{
+    "!include": ["anchor.json"],
+    "!exclude": ["../tools/EFElinear.json"]
+}

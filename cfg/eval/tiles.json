@@ -1,0 +1,12 @@
+{
+    "!include": ["base.json"],
+    "post_args": [],
+    "configurations": {
+        "IndependentRegions": {
+            "--cfg": ["./cfg/tools_off.json", "./cfg/tools/IndependentRegions.json"]
+        },
+        "DependentRegions": {
+            "--cfg": ["./cfg/tools_off.json", "./cfg/tools/DependentRegions.json"]
+        }
+    }
+}

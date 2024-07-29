@@ -1,0 +1,9 @@
+{
+	"EC": {
+		"type": "me-tANS",
+        "quant_start": 0.11, 
+        "quant_end": 54.82,
+		"quant_count": 32,
+		"reverse_encode_order": 1	
+	}
+}

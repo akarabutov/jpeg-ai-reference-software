@@ -1,0 +1,5 @@
+[core]
+    remote = storage_local
+['remote "storage_local"']
+    url = ssh://{user}@{ip}/cache
+    password = {password}

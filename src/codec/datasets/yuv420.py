@@ -1,0 +1,98 @@
+# The copyright in this software is being made available under the BSD
+# License, included below. This software may be subject to other third party
+# and contributor rights, including patent rights, and no such rights are
+# granted under this license.
+#
+# Copyright (c) 2010-2022, ITU/ISO/IEC
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice,
+# this list of conditions and the following disclaimer.
+# * Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+# * Neither the name of the ITU/ISO/IEC nor the names of its contributors may
+# be used to endorse or promote products derived from this software without
+# specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+# THE POSSIBILITY OF SUCH DAMAGE.
+
+import json
+import os
+import re
+
+from src.codec.common import Image
+
+from .base import Dataset
+
+
+class DatasetYUV420(Dataset):
+    def __init__(self, base_path=None, **kwargs):
+        Dataset.__init__(self)
+        file_ext = ".yuv"
+        self.fn_mask = re.compile(
+            "(?P<jpegai_number>.+)_(?P<w>\d+)x(?P<h>\d+)_(?P<fps>\d+)fps_(?P<bit>\d+)bit_YUV(?P<pixel_format>\d+).*.yuv"
+        )
+
+        for fn in sorted(os.listdir(base_path)):
+            if fn.lower().endswith(file_ext.lower()):
+                inst_desc = self.getFileNameStructure(fn)
+                if self._checkProps(inst_desc, kwargs):
+                    d_inst = inst_desc
+                    d_inst["path"] = os.path.join(base_path, fn)
+                    d_inst["name"] = fn
+                    self.instances.append(d_inst)
+
+    def getFileNameStructure(self, fn):
+        p = self.fn_mask.search(fn)
+
+        d = {k: v for k, v in p.groupdict().items() if v is not None}
+
+        ans = {
+            "dimensions": {"width": int(d["w"]), "height": int(d["h"])},
+            "pixel_fmt": d.get("pixel_format", "sRGB"),
+            "bits": int(d.get("bit", 8)),
+            "jpegai_number": d["jpegai_number"],
+        }
+        return ans
+
+    def getInstanceID(self, idx=None):
+        if idx == None:
+            idx = self._idx
+
+        if idx != None:
+            return self.instances[idx]["name"]
+        else:
+            print("Iteration not started!")
+            return None
+
+    def getInstance(self, idx):
+        return self.instances[idx]
+
+    def load(self, idx):
+        inst = self.instances[idx]
+        v_path = inst["path"]
+        bits = inst["bits"]
+        if inst["pixel_fmt"] == "sRGB":
+            return Image.read_png(v_path, bit_depth=bits)
+        else:
+            return Image.read_yuv(
+                v_path,
+                inst["dimensions"]["width"],
+                inst["dimensions"]["height"],
+                bit_depth=bits,
+                fmt=inst["pixel_fmt"],
+            )

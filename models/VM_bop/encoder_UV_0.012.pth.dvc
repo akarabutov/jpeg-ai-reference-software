@@ -1,0 +1,4 @@
+outs:
+- md5: 4a95d0ad477a8c8b916215437b544c79
+  size: 1928062
+  path: encoder_UV_0.012.pth

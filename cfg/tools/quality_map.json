@@ -1,0 +1,15 @@
+{
+	"model": {
+		"tool": "CCS_SGMM",
+		"CCS_SGMM":{
+			"tools_common": {
+				"qual_map": {
+					"enabled": 1,
+					"qp_map_type": 3,
+					"adjust_qp": 1,
+					"ROI_map_in_file": "data/test_mask/00031_TE_1752x1856_8bit_sRGB_mask.png"
+				}
+			}
+		}
+	}
+}

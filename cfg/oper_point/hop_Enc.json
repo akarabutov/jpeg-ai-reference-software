@@ -1,0 +1,97 @@
+{
+	"model": {
+		"CCS_SGMM":{
+			"tools_common":
+			{
+				"model_y": {
+					"encoder": {
+						"tool": "hop_prim",
+						"hop_prim": {
+							"ckpt_model_name": "VM_hop"
+						}
+					}					
+				},
+				"model_uv": {
+					"encoder": {
+						"tool": "hop_sec",
+						"hop_sec": {
+							"ckpt_model_name": "VM_hop"
+						}
+					}
+				}
+			},
+			"tools_0":
+			{
+				"model_y": {
+					"encoder": {
+						"hop_prim": {
+            				"ckpt_files": ["encoder_Y_0.002.pth"]
+                        }
+                    }
+                },
+				"model_uv": {
+					"encoder": {
+						"hop_sec": {
+            				"ckpt_files": ["encoder_UV_0.002.pth"]
+                        }
+                    }
+                }
+			},
+			"tools_1":
+			{
+				"model_y": {
+					"encoder": {
+						"hop_prim": {
+            				"ckpt_files": ["encoder_Y_0.012.pth"]
+                        }
+                    }
+                },
+				"model_uv": {
+					"encoder": {
+						"hop_sec": {
+            				"ckpt_files": ["encoder_UV_0.012.pth"]
+                        }
+                    }
+                }
+			},
+			"tools_2":
+			{
+				"model_y": {
+					"encoder": {
+						"hop_prim": {
+            				"ckpt_files": ["encoder_Y_0.075.pth"]
+                        }
+                    }
+                },
+				"model_uv": {
+					"encoder": {
+						"hop_sec": {
+            				"ckpt_files": ["encoder_UV_0.075.pth"]
+                        }
+                    }
+                }
+			},
+			"tools_3":
+			{
+				"model_y": {
+					"encoder": {
+						"hop_prim": {
+            				"ckpt_files": ["encoder_Y_0.5.pth"]
+                        }
+                    }
+                },
+				"model_uv": {
+					"encoder": {
+						"hop_sec": {
+            				"ckpt_files": ["encoder_UV_0.5.pth"]
+                        }
+                    }
+                }
+			}            
+        },
+        "bitrate_matcher":
+        {
+            "bitrate_config_path": "cfg/betas/hop"
+        }
+    }    
+}

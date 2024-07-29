@@ -1,0 +1,28 @@
+{
+    "oper_points": ["bop", "hop", "bopEnc_sopDec"],
+    "pre_args": ["--coding_type", "enc_dec"],
+    "post_args": [],
+    "configurations": {
+        "only-EnhancementFilters": {
+            "--cfg": ["./cfg/tools_off.json", "./cfg/tools/EnhancementFilters.json"]
+        },
+        "only-EnhancementFilters-wCS": {
+            "--cfg": ["./cfg/tools_off.json", "./cfg/tools/ChromaShift.json", "./cfg/tools/EnhancementFilters.json"]
+        },        
+        "only-EFElinear": {
+            "--cfg": ["./cfg/tools_off.json", "./cfg/tools/EFElinear.json"]
+        },
+        "only-EFE-wCS": {
+            "--cfg": ["./cfg/tools_off.json", "./cfg/tools/ChromaShift.json", "./cfg/tools/EFE.json"]
+        },
+        "only-LEF": {
+            "--cfg": ["./cfg/tools_off.json", "./cfg/tools/LEF.json"]
+        },
+        "only-EFEnonlinear": {
+            "--cfg": ["./cfg/tools_off.json", "./cfg/tools/EFEnonlinear.json"]
+        },
+        "only-eICCI": {
+            "--cfg": ["./cfg/tools_off.json", "./cfg/tools/eICCI.json"]
+        }
+    }
+}

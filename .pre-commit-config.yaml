@@ -1,0 +1,62 @@
+repos:
+  # flake8
+- repo: https://github.com/PyCQA/flake8
+  rev: 3.8.3
+  hooks:
+  - id: flake8
+    args: ['--ignore=W503, W504, E501']
+    exclude: (3rdparty|thirdparty)
+
+  # isort
+- repo: https://github.com/timothycrosley/isort
+  rev: 5.2.2
+  hooks:
+  - id: isort
+    exclude: (3rdparty|thirdparty)
+
+  # yapf
+- repo: https://github.com/pre-commit/mirrors-yapf
+  rev: v0.30.0
+  hooks:
+  - id: yapf
+    args: [-i, '--style={based_on_style: pep8, column_limit: 99}']
+    exclude: (3rdparty|thirdparty)
+
+  # pre-commit-hooks
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v3.2.0
+  hooks:
+  - id: trailing-whitespace      # Trim trailing whitespace
+    exclude: (3rdparty|thirdparty)
+  - id: check-yaml      # Attempt to load all yaml files to verify syntax
+    exclude: (3rdparty|thirdparty)
+  - id: check-merge-conflict      # Check for files that contain merge conflict strings
+    exclude: (3rdparty|thirdparty)
+  - id: double-quote-string-fixer      # Replace double quoted strings with single quoted strings
+    exclude: (3rdparty|thirdparty)
+  - id: end-of-file-fixer      # Make sure files end in a newline and only a newline
+    exclude: (3rdparty|thirdparty)
+  - id: requirements-txt-fixer      # Sort entries in requirements.txt and remove incorrect entry for pkg-resources==0.0.0
+    exclude: (3rdparty|thirdparty)
+  - id: fix-encoding-pragma      # Remove the coding pragma: # -*- coding: utf-8 -*-
+    exclude: (3rdparty|thirdparty)
+    args: [--remove]
+  - id: mixed-line-ending      # Replace or check mixed line ending
+    args: [--fix=lf]
+    exclude: (3rdparty|thirdparty)
+- repo: https://github.com/iterative/dvc
+  rev: 2.10.2       # Tag should be the same as in req-s.txt
+  hooks:
+  - id: dvc-pre-commit
+    language_version: python3
+    stages:
+    - commit
+  - id: dvc-pre-push
+    language_version: python3
+    stages:
+    - push
+  - id: dvc-post-checkout
+    language_version: python3
+    stages:
+    - post-checkout
+    always_run: true

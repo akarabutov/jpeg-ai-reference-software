@@ -1,0 +1,46 @@
+{
+    "!include": ["pipeline.json"],
+	"res_changer": {
+		"enabled": 0,
+		"scale_ver": 2,
+		"scale_hor": 2,
+		"resampler":{
+			"fastResize": true
+		}
+	},    
+    "model": {
+		"CCS_SGMM":{
+			"preprocess_EFE": 0,
+			"tools_common": {
+				"model_common": {
+					"abs_in_hyperprior": 1,
+					"skip_mode": {
+						"use_cube_flags": 1
+					}
+				},
+				"model_y": {
+					"tile_manager_enc": {
+						"numSamplesPerTile": 1048576,
+						"numSamplesTileOverlap": 64
+					},
+					"tile_manager_synthesis": {
+						"enabled": 1,
+						"numSamplesPerTile": 1048576,
+						"numSamplesTileOverlap": 64
+					}
+				},
+				"model_uv": {
+					"tile_manager_enc": {
+						"numSamplesPerTile": 262144,
+						"numSamplesTileOverlap": 32
+					},
+					"tile_manager_synthesis": {
+						"enabled": 1,
+						"numSamplesPerTile": 1048576,
+						"numSamplesTileOverlap": 64
+					}			
+				}
+			}
+		}        
+    }
+}

@@ -1,0 +1,11 @@
+{
+	"model": {
+		"tool": "CCS_SGMM",
+		"CCS_SGMM":{
+			"preprocess_EFE": 0
+		}
+	},
+	"post_filters": {
+		"EFElinear": {"enabled": 1, "DCTIF_only": 0}
+	}
+}

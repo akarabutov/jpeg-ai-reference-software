@@ -1,0 +1,6 @@
+{
+    "version": "v7.0",
+    "codec_name": "VM",
+    "config": ["tools_on.json", "oper_point/hop.json"],
+    "pipeline": "pipeline.json"
+}

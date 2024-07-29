@@ -1,0 +1,4 @@
+outs:
+- md5: 7b2e4670ad95ef7d791e5c281c8a3901
+  size: 627423
+  path: eicci_hop_mse012_300k.pth

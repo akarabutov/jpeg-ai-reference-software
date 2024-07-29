@@ -1,0 +1,91 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run enc/dec VM (base, tools on)",
+            "type": "python",
+            "request": "launch",
+            "module": "src.reco.scripts.eval",
+            "args": [
+                "--cfg", "./cfg/tools_on.json", "./cfg/oper_point/bop.json",
+                "--out_dir", "./results/VM_tools_on",
+                "--coding_type", "enc_dec"
+            ]
+        },
+        {
+            "name": "Run enc/dec VM (high, tools on)",
+            "type": "python",
+            "request": "launch",
+            "module": "src.reco.scripts.eval",
+            "args": [
+                "--cfg", "./cfg/tools_on.json", "./cfg/oper_point/hop.json",
+                "--out_dir", "./results/VM_tools_on",
+                "--coding_type", "enc_dec"
+            ]
+        },
+        {
+            "name": "Run enc/dec VM (BOP encoder, SOP decoder, tools on)",
+            "type": "python",
+            "request": "launch",
+            "module": "src.reco.scripts.eval",
+            "args": [
+                "--cfg", "./cfg/tools_on.json", "./cfg/oper_point/bopEnc_sopDec.json",
+                "--out_dir", "./results/VM_tools_on",
+                "--coding_type", "enc_dec"
+            ]
+        },
+        {
+            "name": "Run enc/dec VM (base, tools off)",
+            "type": "python",
+            "request": "launch",
+            "module": "src.reco.scripts.eval",
+            "args": [
+                "--cfg", "./cfg/tools_off.json", "./cfg/oper_point/bop.json",
+                "--out_dir", "./results/VM_tools_off",
+                "--coding_type", "enc_dec"
+            ]
+        },
+        {
+            "name": "Run enc/dec VM (high, tools off)",
+            "type": "python",
+            "request": "launch",
+            "module": "src.reco.scripts.eval",
+            "args": [
+                "--cfg", "./cfg/tools_off.json", "./cfg/oper_point/hop.json",
+                "--out_dir", "./results/VM_tools_off",
+                "--coding_type", "enc_dec"
+            ]
+        },        
+        {
+            "name": "Run enc/dec VM (BOP encoder, SOP decoder, tools on)",
+            "type": "python",
+            "request": "launch",
+            "module": "src.reco.scripts.eval",
+            "args": [
+                "--cfg", "./cfg/tools_off.json", "./cfg/oper_point/bopEnc_sopDec.json",
+                "--out_dir", "./results/VM_tools_on",
+                "--coding_type", "enc_dec"
+            ]
+        },        
+        {
+            "name": "Run local training script",
+            "type": "python",
+            "request": "launch",
+            "module": "scripts.acc_train_scripts.acc_train_local",
+            "args": [
+                "--data_dir",  "<TRAIN_DATA_SET_PATH>",
+                "--lst",  "<TRAIN_DATA_LIST_PATH>",
+                "--val_data_dir", "<VAL_DATA_SET_PATH>",
+                "--val_lst", "<VAL_DATA_LIST_PATH>",
+                "--train_url", "<OUTPUT_DIR>",
+                "--opt_type", "lamb",
+                "--mse_weight", "1.0",
+                "--seed", "2",
+                "--test_data_dir",  "data/test"
+            ]
+        }
+   ]
+}

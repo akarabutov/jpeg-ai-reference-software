@@ -1,93 +1,132 @@
-# JPEG AI Reference Software
+# JPEG-AI Verification model
 
+## JPEG-AI Verification software guideline
 
+You can find JPEG-AI Verification software guideline in [output document of ISO](https://sd.iso.org/documents/ui/#!/browse/iso/iso-iec-jtc-1/iso-iec-jtc-1-sc-29/iso-iec-jtc-1-sc-29-wg-1/library/6/98-Sydney/OUTPUT%20N-documents/wg1n100450-098-ICQ-JPEG%20AI%20Verification%20software%20guidelines) or [here](./docs/docx/wg1n100450.docx).
 
-## Getting started
+## System requirments
+1. Ubuntu Linux 18.04 or later
+2. CUDA 10.2+ or CUDA 11.3+.
+2. List of packages (you may run `make setup_system` to install them):
+    - doxygen 1.8.13
+    - graphviz 2.40.1
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Setup Environment
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+1. Install reuirments:
+    - On Ubuntu PC.
+        Install [miniconda](https://docs.anaconda.com/miniconda/) and setup an environment by a command: `make configure`.
+    
+    - Docker container.
+        To get Docker container run a command: `make run_docker`.
 
-## Add your files
+2. Build C++ libraries: `make build_test_libs`.
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+## Downloading datasets and models
+
+### Dataset for the reconstruction task
+
+By default a dataset for evaluation locates in a directory `data/test`. 
+
+Run a command `make download_test_ds` to download JPEG-AI evaluation dataset.
+
+### Dataset for training
+
+Training and Validation datasets could be downloaded by a command: `make download_test_ds`.
+
+The training dataset will be stored to `data/jpegai_training_random_crop` and the validation dataset will be stored to `data/jpegai_validation_set`.
+
+### Models
+
+Run the following command for downloading models:
+```
+make download_models
+```
+
+## Evaluation of the reconstruction task
+
+Evaluation over all images in the dataset:
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/wg1/jpeg-ai/jpeg-ai-reference-software.git
-git branch -M main
-git push -uf origin main
+make test
+```
+the results will be stored to a directory `results/test`.
+The script automatically download models and checks there MD5 hashs.
+
+Use the following command line to encode an image:
+
+```
+python -m src.reco.coders.encoder <IMAGE_PATH> <OUTPUT_STREAM_PATH> [--set_target_bpp <TARGET_BPPm100>]
 ```
 
-## Integrate with your tools
+where `<IMAGE_PATH>` is a path to the input image in PNG format, `<OUTPUT_STREAM_PATH>` is a path to the output bitstream, `<TARGET_BPPm100>` is a target bit per pixel multiplied by 100.
 
-- [ ] [Set up project integrations](https://gitlab.com/wg1/jpeg-ai/jpeg-ai-reference-software/-/settings/integrations)
 
-## Collaborate with your team
+Run the following command to decode the bitstream file:
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+```
+python -m src.reco.coders.encoder <INPUT_STREAM_PATH> <OUTPUT_PNG_IMAGE_PATH> 
+```
 
-## Test and Deploy
+where `<INPUT_STREAM_PATH>` is the path to the bitstream, `<OUTPUT_PNG_IMAGE_PATH>` is the path to the output PNG file.
 
-Use the built-in continuous integration in GitLab.
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+## Training
 
-***
+You can run training by a command:
+```
+make train
+```
 
-# Editing this README
+## Documentation
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+You may find slides with SW design [here](docs/ppt/VM.pptx).
 
-## Suggestions for a good README
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
 
-## Name
-Choose a self-explaining name for your project.
+An example of a command line for training you can find in a file `scripts/train.sh`.
+Additional information about setting parameters of training you can find [here](src/train/README.md).
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+### Quantization of trained models
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+Description of quantization process you can find in a [file](docs/md/quantization.md).
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+## Progressive decoding
+To enable the progressive decoding functionality, please run `bash scripts/progressive_decoding/reorder.sh` to make the latent tensor be arranged in decerasing entropy order across the channel dimension.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+### Checkpoints
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+You may find information about checkpoints processing [here](docs/md/checkpoints.md)
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+## List of 'make' commands
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+- `make setup_system` installs all necessary packages on your Ubuntu Linux.
+- `make setup_env` creates conda environment (`jpeg_ai_vm`) install all necessary python's packages and build all necessary c++ libraries.
+- `make build_test_libs` builds all necessary for test C++ libraries.
+- `make build_train_libs` builds all necessary for training C++ libraries.
+- `make build_libs` builds all C++ libraries for test and training.
+- `make download_dvc_cache` downloads DVC cache from JPEG-AI's sFTP.
+- `make download_test_ds` pulls test dataset from DVC cache.
+- `make download_models` pulls models from DVC cache.
+- `make download_train_ds` downloads training and validation datasets.
+- `make test` runs test with the default configuration and store results to a directory `results/test`.
+- `make unittest` runs unit tests.
+- `make tool_ena` runs tools-off tests with only one tool enabled.
+- `make tool_dis` runs tools-on tests with only one tool disabled.
+- `make tool_perf` runs test `tool_ena` and `tool_dis`.
+- `make train` runs training.
+- `make export_models` exports models to ONNX and CSV files.
+- `make run_docker` runs dowcker container.
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
 
-## License
-For open source projects, say how it is licensed.
+## Troubleshooting
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+### Cannot download checkpoints from sFTP
+
+First of all, check that you can connect to sFTP (step 5 in Set-up section). In the case of success try to run a test again.
+
+Otherwise you may use http mirror for this and download checkpoints from global sFTP
+manually by running a command: `make download_dvc_cache`

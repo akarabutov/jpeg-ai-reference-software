@@ -1,0 +1,28 @@
+{
+	"model": {
+		"CCS_SGMM":{
+			"tools_0":
+			{
+				"BDL_range": [-1024,259]
+			},
+			"tools_1":
+			{
+				"BDL_range": [-443,259]
+			},
+			"tools_2":
+			{
+				"BDL_range": [-443,702]
+			},
+			"tools_3":
+			{
+				"BDL_range": [-443,702]
+			}
+		},
+		"bitrate_matcher":{
+			"enabled": 1,
+			"use_default":0,
+			"rewrite_beta_list_file": 0,
+			"regen_beta_list": 0
+		}
+	}
+}

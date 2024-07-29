@@ -1,0 +1,2 @@
+#!/bin/bash
+cp *py /home/dqyu/work/CUDA_FUSED_OPT/apex/build/lib.linux-x86_64-3.7/apex/optimizers/

@@ -1,0 +1,8 @@
+{
+	"!include": "CTC.json",
+	"model": {
+		"bitrate_matcher":{
+			"bitrate_config_name":"betas_tools_off.txt"
+		}
+	}
+}
