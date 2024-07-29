@@ -83,21 +83,9 @@ You can run training by a command:
 make train
 ```
 
-## Documentation
+### Quantization of the models
 
-You may find slides with SW design [here](docs/ppt/VM.pptx).
-
-
-
-An example of a command line for training you can find in a file `scripts/train.sh`.
-Additional information about setting parameters of training you can find [here](src/train/README.md).
-
-### Quantization of trained models
-
-Description of quantization process you can find in a [file](docs/md/quantization.md).
-
-## Progressive decoding
-To enable the progressive decoding functionality, please run `bash scripts/progressive_decoding/reorder.sh` to make the latent tensor be arranged in decerasing entropy order across the channel dimension.
+Command `./scripts/models_processing/all.sh` quantize and rearrange models' weights.
 
 
 ### Checkpoints
