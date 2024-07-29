@@ -1,5 +1,4 @@
 [core]
     remote = storage
 ['remote "storage"']
-    url = ssh://storage_reader@jpeg-git.lx.it.pt/cache
-    password = kj3457rjzsd
+    url = https://jpeg-git.lx.it.pt/cache
