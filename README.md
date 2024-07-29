@@ -45,6 +45,11 @@ make download_models
 
 ## Evaluation of the reconstruction task
 
+Activate conda environment: 
+```
+conda activate jpeg_ai_vm
+```
+
 Evaluation over all images in the dataset:
 
 ```
@@ -119,7 +124,7 @@ You may find information about checkpoints processing [here](docs/md/checkpoints
 - `make tool_perf` runs test `tool_ena` and `tool_dis`.
 - `make train` runs training.
 - `make export_models` exports models to ONNX and CSV files.
-- `make run_docker` runs dowcker container.
+- `make run_docker` runs docker container.
 
 
 ## Troubleshooting
