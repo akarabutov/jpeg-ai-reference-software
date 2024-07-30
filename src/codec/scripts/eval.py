@@ -156,7 +156,7 @@ def def_eval_base_parser():
     this.add_argument('--overwrite', dest='overwrite', action='store_true')
 
     this.add_argument('--skip_models_check',
-                      default=False,
+                      default=True,
                       action='store_true',
                       help='Skip models check and downloading')
     

@@ -50,6 +50,11 @@ Activate conda environment:
 conda activate jpeg_ai_vm
 ```
 
+Building C++ libraries:
+```
+make build_test_libs
+```
+
 Evaluation over all images in the dataset:
 
 ```
