@@ -66,16 +66,16 @@ The script automatically download models and checks there MD5 hashs.
 Use the following command line to encode an image:
 
 ```
-python -m src.reco.coders.encoder <IMAGE_PATH> <OUTPUT_STREAM_PATH> [--set_target_bpp <TARGET_BPPm100>]
+python -m src.reco.coders.encoder <IMAGE_PATH> <OUTPUT_STREAM_PATH> [--set_target_bpp <TARGET_BPPm100>] [--cfg <CFG1> [<CFG2> [<CFG3> ...]]]
 ```
 
-where `<IMAGE_PATH>` is a path to the input image in PNG format, `<OUTPUT_STREAM_PATH>` is a path to the output bitstream, `<TARGET_BPPm100>` is a target bit per pixel multiplied by 100.
+where `<IMAGE_PATH>` is a path to the input image in PNG format, `<OUTPUT_STREAM_PATH>` is a path to the output bitstream, `<TARGET_BPPm100>` is a target bit per pixel multiplied by 100. Specify a list of the configuration files of the encoding. Configuration files load one by one. In a case of running tests without any tool, the command line is: `--cfg cfg/tools_off.json cfg/oper_point/<OPER_POINT>.json`, where `<OPER_POINT>` is `bopEnc_sopDec`, `bop` or `hop`. In a case of running tests without all tools, the command line is: `--cfg cfg/tools_on.json cfg/oper_point/<OPER_POINT>.json`. To run test with enabling only particular tools, use the following command line: `--cfg cfg/tools_off.json cfg/tools/<TOOL1>.json [cfg/tools/<TOOL2>.json ...] cfg/oper_point/<OPER_POINT>.json`. Where `<TOOLN>.json` is one of the files from cfg/tools directory.
 
 
 Run the following command to decode the bitstream file:
 
 ```
-python -m src.reco.coders.encoder <INPUT_STREAM_PATH> <OUTPUT_PNG_IMAGE_PATH> 
+python -m src.reco.coders.decoder <INPUT_STREAM_PATH> <OUTPUT_PNG_IMAGE_PATH> 
 ```
 
 where `<INPUT_STREAM_PATH>` is the path to the bitstream, `<OUTPUT_PNG_IMAGE_PATH>` is the path to the output PNG file.
