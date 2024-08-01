@@ -291,6 +291,7 @@ class CodecCoder:
                 
         if kwargs.get('device', '') == 'cpu' or not have_gpu:
             set_param_recurrent(params, 'target_device', 'cpu')
+            kwargs['device'] = 'cpu'
         return params
 
     # ##################################################################################################################
