@@ -126,11 +126,17 @@ def process_encoder(coder: RecoEncoder, cmd_args: List[str] = None, loadNbuild_m
     timeslot_hash.set_bgn_time()
     coder.print_image_hash(coder.rec_image)
     timeslot_hash.set_end_time()
+    output_ext = ".png"
 
     calc_metrics = kwargs.get('calc_metrics', False)
+    if calc_metrics:
+        ori_fn = kwargs.get('input_path', None)
+        if ori_fn is not None:
+            output_ext = os.path.splitext(ori_fn)[1]
+        
     if not is_write_rec:
         import tempfile
-        f = tempfile.NamedTemporaryFile(delete=False)
+        f = tempfile.NamedTemporaryFile(delete=False, suffix=output_ext)
         rec_fpath = f.name
         
     if calc_metrics:
