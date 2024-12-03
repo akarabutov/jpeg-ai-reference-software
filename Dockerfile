@@ -1,4 +1,5 @@
 FROM nvcr.io/nvidia/tensorrt:19.12-py3
+ENTRYPOINT /bin/bash
 
 
 # Install requirements
@@ -32,35 +33,14 @@ WORKDIR /root/vm
 RUN \
     source /root/miniconda3/bin/activate && \
     conda activate jpeg_ai_vm && \
-    pre-commit install
-
-WORKDIR /root/vm/src/codec/entropy_coding/cpp_exts
-
-RUN \
-    source /root/miniconda3/bin/activate && \
-    conda activate jpeg_ai_vm && \
-    ./build.sh
-
-WORKDIR /root/vm/src/train/3rdparty/apex
-
-RUN \
-    source /root/miniconda3/bin/activate && \
-    conda activate jpeg_ai_vm && \
-    pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" --global-option=build_ext --global-option="-I/usr/local/cuda/include/" ./
-
-WORKDIR /root/vm
-
-RUN \
-    source /root/miniconda3/bin/activate && \
-    conda activate jpeg_ai_vm && \
-    dvc pull data/test/*.dvc && \
-    dvc pull models/VM/*.dvc 
-    
+    pre-commit install 
 
 RUN echo 'root:Ai123456!@#$%^' | chpasswd
 
 # RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' /etc/ssh/sshd_config
 # RUN service ssh start
+
+RUN source /root/miniconda3/bin/activate && conda activate jpeg_ai_vm && /bin/bash
 
 
 CMD ["/usr/sbin/sshd","-D"]

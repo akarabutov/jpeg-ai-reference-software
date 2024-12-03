@@ -64,7 +64,7 @@ build_docker:
 	docker build . -t diveraak/jpeg_ai:latest
 
 run_docker:
-	docker run -it --mount src=.,target=/root/vm_init,type=bind diveraak/jpeg_ai:latest /bin/bash
+	docker run -it --mount src=`pwd`,target=/root/vm,type=bind diveraak/jpeg_ai:latest /bin/bash
 
 export_models:
 	# Export models without post-filters

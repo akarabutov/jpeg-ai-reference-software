@@ -43,7 +43,7 @@ Run the following command for downloading models:
 make download_models
 ```
 
-## Evaluation of the reconstruction task
+## Evaluation of the reconstruction task over JPEG-AI testing dataset
 
 Activate conda environment: 
 ```
