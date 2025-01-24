@@ -9,10 +9,7 @@ configure: setup_system setup_env
 build_test_libs:
 	./scripts/build_test_libs.sh
 
-build_train_libs:
-	./scripts/build_train_libs.sh
-
-build_libs: build_test_libs build_train_libs
+build_libs: build_test_libs
 
 download_dvc_cache:
 	./scripts/sFTP_mirror/download_cache.sh
@@ -27,10 +24,7 @@ download_train_ds:
 	./scripts/download_train_ds.sh
 
 test:
-	python -m src.reco.scripts.eval --coding_type enc_dec --out_dir results/test --cpu_threads_limit 1
-
-train:
-	./scripts/train.sh
+	python -m src.reco.scripts.eval --coding_type enc_dec --out_dir results/test
 
 all: configure build_test_libs download_test_ds test
 

@@ -202,8 +202,10 @@ class ArgParserDecorator:
         def rem_key_from_dict(cfg_dict: Dict, excl_key: str) -> Dict:
             if excl_key in cfg_dict:
                 del cfg_dict[excl_key]
+            new_dict = OrderedDict()
             for k in cfg_dict.keys():
-                cfg_dict[k] = rem_key_from_dict(cfg_dict[k], excl_key)
+                new_dict[k] = rem_key_from_dict(cfg_dict[k], excl_key)
+            cfg_dict.update(new_dict)
             return cfg_dict
         
         def collect_dict_keys(cfg_dict: Dict) -> List:

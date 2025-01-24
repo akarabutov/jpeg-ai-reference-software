@@ -155,7 +155,7 @@ class EFElinear(FilterBase):
         if o_ver == 2 and o_hor == 1:
             chromaH = tensor.shape[2]*2
             chromaW = tensor.shape[3]
-            out_tensor = torch.zeros([1,1,chromaH,chromaW])
+            out_tensor = torch.zeros([1,1,chromaH,chromaW], dtype=tensor.dtype, device=tensor.device)
             out_tensor[:,:,0::2,:]=tensor[:,0:1,:,:]
             out_tensor[:,:,1::2,:]=tensor[:,2:3,:,:]
             out_tensor = out_tensor[:,:,:LumaH,:]
@@ -163,7 +163,7 @@ class EFElinear(FilterBase):
         if o_ver == 1 and o_hor == 2:
             chromaH = tensor.shape[2]
             chromaW = tensor.shape[3]*2
-            out_tensor = torch.zeros([1,1,chromaH,chromaW])
+            out_tensor = torch.zeros([1,1,chromaH,chromaW], dtype=tensor.dtype, device=tensor.device)
             out_tensor[:,:,:,0::2]=tensor[:,0:1,:,:]
             out_tensor[:,:,:,1::2]=tensor[:,1:2,:,:]
             out_tensor = out_tensor[:,:,:,:LumaW]
@@ -171,7 +171,7 @@ class EFElinear(FilterBase):
         if o_ver == 2 and o_hor == 2:
             chromaH = tensor.shape[2]*2
             chromaW = tensor.shape[3]*2
-            out_tensor = torch.zeros([1,1,chromaH,chromaW], device = tensor.device)
+            out_tensor = torch.zeros([1,1,chromaH,chromaW], dtype=tensor.dtype, device = tensor.device)
             out_tensor[:,:,0::2,0::2]=tensor[:,0:1,:,:]
             out_tensor[:,:,0::2,1::2]=tensor[:,1:2,:,:]
             out_tensor[:,:,1::2,0::2]=tensor[:,2:3,:,:]
@@ -190,8 +190,7 @@ class EFElinear(FilterBase):
                  ,dim=1)
         
         if scale_ver == 2 and scale_hor == 1:
-            if tensor.shape[2]%2 == 1:
-                tensor_pad = pad(tensor,(0,0,0,1),mode='replicate') #vertical padding
+            tensor_pad = pad(tensor,(0,0,0,1),mode='replicate') if tensor.shape[2]%2 == 1 else tensor #vertical padding
             out_tensor = torch.cat (
                 (
                  tensor_pad[:,:,0::2,:],
@@ -202,8 +201,7 @@ class EFElinear(FilterBase):
                 ,dim=1)
             
         if scale_ver == 1 and scale_hor == 2:
-            if tensor.shape[3]%2 == 1:
-                tensor_pad = pad(tensor,(0,1,0,0),mode='replicate') #horizontal padding
+            tensor_pad = pad(tensor,(0,1,0,0),mode='replicate') if tensor.shape[3]%2 == 1 else tensor #horizontal padding
             out_tensor = torch.cat (
                 (tensor_pad[:,:,:,0::2], 
                  tensor_pad[:,:,:,1::2],
@@ -338,9 +336,9 @@ class EFElinear(FilterBase):
         h, w = rec_Y.shape[-2:]
         U_org_pad = self.pixelUnshuffleGeneral(self.c[:,0:1],3-self.s_ver,3-self.s_hor)
         V_org_pad = self.pixelUnshuffleGeneral(self.c[:,1:2],3-self.s_ver,3-self.s_hor)
-        rec_U_pad = self.pixelUnshuffleGeneral(rec_U,3-self.c_ver,3-self.c_hor)
+        rec_U_pad = self.pixelUnshuffleGeneral(rec_U,3-self.s_ver,3-self.s_hor)
         rec_U_pad = pad(rec_U_pad,(2,2,2,2),mode='replicate')
-        rec_V_pad = self.pixelUnshuffleGeneral(rec_V,3-self.c_ver,3-self.c_hor)
+        rec_V_pad = self.pixelUnshuffleGeneral(rec_V,3-self.s_ver,3-self.s_hor)
         rec_V_pad = pad(rec_V_pad,(2,2,2,2),mode='replicate')
         rec_Y_pad = self.pixelUnshuffleGeneral(rec_Y,2,2)
 
@@ -469,6 +467,7 @@ class EFElinear(FilterBase):
                                 rec_V_best,
                                 img.data_range,
                                 format=self.out_format,
+                                bit_depth=img.bit_depth,
                                 color_space='yuv')
         filters = {'mean1':mean1, 'mean2':mean2, 'Y':[],'U':filtersU_best,'V':filtersV_best,'candY':-1,'candU':best_cand_u_idx,'candV':best_cand_v_idx, 'U2':filtersU2_best, 'V2':filtersV2_best}
         return ans , filters
@@ -481,8 +480,8 @@ class EFElinear(FilterBase):
             self.rec_V = img.get_component('c').clone()
 
             self.rec_Y_pad = self.pixelUnshuffleGeneral(self.rec_Y,2,2)
-            self.rec_U_pad = self.pixelUnshuffleGeneral(self.rec_U,3-self.c_ver,3-self.c_hor)
-            self.rec_V_pad = self.pixelUnshuffleGeneral(self.rec_V,3-self.c_ver,3-self.c_hor)
+            self.rec_U_pad = self.pixelUnshuffleGeneral(self.rec_U,3-self.s_ver,3-self.s_hor)
+            self.rec_V_pad = self.pixelUnshuffleGeneral(self.rec_V,3-self.s_ver,3-self.s_hor)
             self.rec_U_pad = pad(self.rec_U_pad,(2,2,2,2),mode='replicate')
             self.rec_V_pad = pad(self.rec_V_pad,(2,2,2,2),mode='replicate')
 
@@ -536,13 +535,14 @@ class EFElinear(FilterBase):
                 adu = self.LumaAidedUpsampler_apply(self.rec_Y_pad[:,:,sli_l_h,sli_l_v], rec[:,:,sli_l_h,sli_l_v])
                 rec_new[:,:,sli_l_h_org,sli_l_v_org] = adu
             if j == 0:
-                rec_U_new = self.pixelShuffleGeneral(rec_new,o_ver=self.o_ver,o_hor=self.o_hor, LumaH=self.rec_Y.shape[2]>>(self.s_hor-1), LumaW=self.rec_Y.shape[3]>>(self.s_ver-1))
+                rec_U_new = self.pixelShuffleGeneral(rec_new,o_ver=self.o_ver,o_hor=self.o_hor, LumaH=self.rec_Y.shape[2]>>(self.s_ver-1), LumaW=self.rec_Y.shape[3]>>(self.s_hor-1))
             else:
-                rec_V_new = self.pixelShuffleGeneral(rec_new,o_ver=self.o_ver,o_hor=self.o_hor, LumaH=self.rec_Y.shape[2]>>(self.s_hor-1), LumaW=self.rec_Y.shape[3]>>(self.s_ver-1))
+                rec_V_new = self.pixelShuffleGeneral(rec_new,o_ver=self.o_ver,o_hor=self.o_hor, LumaH=self.rec_Y.shape[2]>>(self.s_ver-1), LumaW=self.rec_Y.shape[3]>>(self.s_hor-1))
         ans = Image.create_from_tensors(self.rec_Y,
                                     rec_U_new,
                                     rec_V_new,
                                     img.data_range,
+                                    bit_depth=img.bit_depth,
                                     format=self.out_format,
                                     color_space='yuv')
         return ans

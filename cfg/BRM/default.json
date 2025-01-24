@@ -3,19 +3,23 @@
         "CCS_SGMM":{
             "tools_0":
             {
-                "base_model_beta": 0.002
+                "base_model_beta": 0.002,
+				"BDL_range": [-1024,259]
             },
             "tools_1":
             {
-                "base_model_beta": 0.012
+                "base_model_beta": 0.012,
+				"BDL_range": [-443,259]
             },
             "tools_2":
             {
-                "base_model_beta": 0.075
+                "base_model_beta": 0.075,
+				"BDL_range": [-443,702]
             },
             "tools_3":
             {
-                "base_model_beta": 0.5
+                "base_model_beta": 0.5,
+				"BDL_range": [-443,702]
             }
         },        
         "bitrate_matcher":{

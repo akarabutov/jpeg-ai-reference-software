@@ -104,7 +104,8 @@ class LEF(FilterBase):
                                         rec_U,
                                         rec_V,
                                         rec.data_range,
-                                        format='420',
+                                        bit_depth=rec.bit_depth,
+                                        format=rec.format,
                                         color_space='yuv')
 
         return [ans] + rec_imgs[1:]
@@ -140,7 +141,8 @@ class LEF(FilterBase):
                                         rec_U,
                                         rec_V,
                                         img.data_range,
-                                        format='420',
+                                        bit_depth=img.bit_depth,
+                                        format=img.format,
                                         color_space='yuv')
 
         return [ans] + imgs[1:]

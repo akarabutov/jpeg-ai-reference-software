@@ -32,8 +32,11 @@
 
 from typing import Dict, List, Tuple
 
+import os
 import torch
+import commentjson
 
+from src.codec import get_profiles_dir
 from src.codec.common import Decisions, Image
 from src.codec.entropy_coding import ECModule, HeaderCoder
 
@@ -84,10 +87,6 @@ class CodingEngine(ToolEngine):
         self.model.add_preproc_tool('bitrate_matcher', BitrateMatcher())
         self.model.add_postproc_tool('rdlr', RDLR())
 
-        # Profile level parameters
-        self.stream_profile_idc = 0
-        self.level_idc = 0
-
         self.eval()
         
     def init_new_img(self) -> None:
@@ -129,14 +128,15 @@ class CodingEngine(ToolEngine):
 
             rec_compressed, decisions = self.compress_model(img2compress)
             
-            rec_img_coded_resolution = self.colour_processing.post_processing(rec_compressed)
-
-            rec_img = self.res_changer.backward_transform(rec_img_coded_resolution)
+            rec_img = self.res_changer.backward_transform(rec_compressed)
             rec_img.to_format_(image.format)
 
             # Execute post filters
             self.post_filters.compress(rec_img.clone(), image.clone(), decisions=decisions)
-            rec_img = self.post_filters.decompress(rec_img, decisions=decisions)
+            rec_img_after_filters = self.post_filters.decompress(rec_img, decisions=decisions)
+
+            rec_img = self.colour_processing.post_processing(rec_img_after_filters)
+
             self.get_profilers().finish('image compression')
 
             return rec_img, decisions
@@ -151,7 +151,8 @@ class CodingEngine(ToolEngine):
             self.logger.info('Image decompressed')
             # Execute post filters
             if self.model.is_enabled():                
-                rec_img = self.post_filters.decompress(rec_img, decisions=decisions)
+                rec_img_after_filters = self.post_filters.decompress(rec_img, decisions=decisions)
+            rec_img = self.colour_processing.post_processing(rec_img_after_filters)
             self.get_profilers().finish('image decompression')
             return rec_img
 
@@ -183,18 +184,18 @@ class CodingEngine(ToolEngine):
         assert self.diff_display_img_height >= 0 and self.diff_display_img_height < 64
         
         # Profile level parameters
-        ec.encode(self.stream_profile_idc,
+        ec.encode(self.decoder_profile_id,
                   bits_count=4,
-                  name="stream_profile_idc")
-        ec.encode(len(self.decoder_profile_idc)-1,
+                  name="decoder_profile_id")
+        ec.encode(len(self.synthesis_transform_id)-1,
                   bits_count=4,
-                  name="num_decoder_profiles_minus1")
-        for i,dec_id in enumerate(self.decoder_profile_idc):
+                  name="num_synthesis_transforms_minus1")
+        for i,dec_id in enumerate(self.synthesis_transform_id):
             ec.encode(dec_id, 
                       bits_count=4, 
-                      name=f'decoder_profile_idc[{i}]')
+                      name=f'synthesis_transform_id[{i}]')
         ec.encode(self.level_idc,
-                  bits_count=4, 
+                  bits_count=8, 
                   name="level_idc")
         # Profile level parameters end
 
@@ -217,19 +218,19 @@ class CodingEngine(ToolEngine):
 
     def decode_header(self, ec: HeaderCoder):
         # Profile level parameters
-        self.stream_profile_idc = int(ec.decode([1],
+        self.decoder_profile_id = int(ec.decode([1],
                                                 bits_count=4, 
-                                                name="stream_profile_idc"))
-        num_decoder_profiles_minus1 = int(ec.decode([1],
+                                                name="decoder_profile_id"))
+        num_synthesis_transforms_minus1 = int(ec.decode([1],
                                                     bits_count=4, 
-                                                    name="num_decoder_profiles_minus1"))
-        self.decoder_profile_idc = [0] * (num_decoder_profiles_minus1 + 1)
-        for i in range(num_decoder_profiles_minus1 + 1):
-            self.decoder_profile_idc[i] = int(ec.decode([1],
+                                                    name="num_synthesis_transforms_minus1"))
+        self.synthesis_transform_id = [0] * (num_synthesis_transforms_minus1 + 1)
+        for i in range(num_synthesis_transforms_minus1 + 1):
+            self.synthesis_transform_id[i] = int(ec.decode([1],
                                                         bits_count=4,
-                                                        name=f'decoder_profile_idc[{i}]'))
+                                                        name=f'synthesis_transform_id[{i}]'))
         self.level_idc = int(ec.decode([1],
-                                       bits_count=4,
+                                       bits_count=8,
                                        name="level_idc"))
         # Profile level parameters end
 
@@ -254,7 +255,32 @@ class CodingEngine(ToolEngine):
         self.res_changer.setup([self.img_height, self.img_width])
         
     def get_default_decoder_id(self):
-        return self.decoder_profile_idc[0] if self.decoder_id is None else self.decoder_id
+        return self.synthesis_transform_id[0] if self.decoder_id is None else self.decoder_id
+    
+    def check_complience(self):
+        # Check profile
+        ## Get list of supported profiles
+        with open(os.path.join(get_profiles_dir(), "profiles_list.json"), "r") as f:
+            prof_list = commentjson.load(f)['profiles']
+        assert self.decoder_profile_id < len(prof_list) and self.decoder_profile_id >= 0, "Incorrect value of decoder_profile_id"
+        with open(os.path.join(get_profiles_dir(), f"{prof_list[self.decoder_profile_id]}.json"), "r") as f:
+            profile_cfg = commentjson.load(f)
+        # Sanity check
+        assert profile_cfg['decoder_profile_id'] == self.decoder_profile_id, "Incorrect value of decoder_profile_id in the configuration file of the profile"
+        # Check synthesis 
+        assert self.get_default_decoder_id() in profile_cfg['synthesis_transform_id'], "The profile doesn't support the synthesis network"
+        
+        # Check level
+        with open(os.path.join(get_profiles_dir(), "levels.json"), "r") as f:
+            levels_cfg = commentjson.load(f)
+        lvl0 = self.level_idc // 10
+        lvl1 = self.level_idc - 10 * lvl0
+        assert f"{lvl0}" in levels_cfg['level_idc0'], "Unsupported type of level"
+        assert f"{lvl1}" in levels_cfg['level_idc1'], "Unsupported type of level"
+        ## Check image size
+        assert self.img_height * self.img_width <= levels_cfg['level_idc0'][f"{lvl0}"]["max_pic_size"], "The output image is too large"
+        ## Check model_id
+        assert self.model.get_tool().get_active_tool_idx() in levels_cfg['level_idc1'][f"{lvl1}"]["models"], "Unproper model is used"
         
     def build_models_recursively(self):
         super().build_models_recursively()

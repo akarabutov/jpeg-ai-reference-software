@@ -74,6 +74,7 @@ class RecoDecoder(CodecDecoder):
         # self.init_ec_module()
 
         decisions = self.ce.decode(self.ec_module, with_headers=False)
+        self.ce.check_complience()
         self.rec_image = self.ce.decompress(decisions)
 
         self.close_bs()
