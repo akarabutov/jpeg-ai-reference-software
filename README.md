@@ -29,7 +29,6 @@ cd jpeg-ai-reference-software
         To get Docker container run a command: `make run_docker`.
 
 2. Build C++ libraries for testing: `make build_test_libs`.
-3. Build C++ libraries for training (if it is needed): `make build_train_libs`.
 
 ## Downloading datasets and models
 

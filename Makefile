@@ -9,10 +9,7 @@ configure: setup_system setup_env
 build_test_libs:
 	./scripts/build_test_libs.sh
 
-build_train_libs:
-	./scripts/build_train_libs.sh
-
-build_libs: build_test_libs build_train_libs
+build_libs: build_test_libs
 
 download_dvc_cache:
 	./scripts/sFTP_mirror/download_cache.sh
