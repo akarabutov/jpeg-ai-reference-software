@@ -30,27 +30,6 @@ cd jpeg-ai-reference-software
 
 2. Build C++ libraries for testing: `make build_test_libs`.
 
-## Downloading datasets and models
-
-### Dataset for the reconstruction task
-
-By default a dataset for evaluation locates in a directory `data/test`. 
-
-Run a command `make download_test_ds` to download JPEG-AI evaluation dataset.
-
-### Dataset for training
-
-Training and Validation datasets could be downloaded by a command: `make download_test_ds`.
-
-The training dataset will be stored to `data/jpegai_training_random_crop` and the validation dataset will be stored to `data/jpegai_validation_set`.
-
-### Models
-
-Run the following command for downloading models:
-```
-make download_models
-```
-
 ## Evaluation of the reconstruction task
 
 Evaluation over all images in the dataset:
@@ -88,46 +67,16 @@ You may find slides with SW design [here](docs/ppt/VM.pptx).
 An example of a command line for training you can find in a file `scripts/train.sh`.
 Additional information about setting parameters of training you can find [here](src/train/README.md).
 
-### Quantization of trained models
-
-Description of quantization process you can find in a [file](docs/md/quantization.md).
-
-## Progressive decoding
-To enable the progressive decoding functionality, please run `bash scripts/progressive_decoding/reorder.sh` to make the latent tensor be arranged in decerasing entropy order across the channel dimension.
-
-
-### Checkpoints
-
-You may find information about checkpoints processing [here](docs/md/checkpoints.md)
-
-
 
 ## List of 'make' commands
 
 - `make setup_system` installs all necessary packages on your Ubuntu Linux.
 - `make setup_env` creates conda environment (`jpeg_ai_vm`) install all necessary python's packages and build all necessary c++ libraries.
 - `make build_test_libs` builds all necessary for test C++ libraries.
-- `make build_train_libs` builds all necessary for training C++ libraries.
-- `make build_libs` builds all C++ libraries for test and training.
-- `make download_dvc_cache` downloads DVC cache from JPEG-AI's sFTP.
-- `make download_test_ds` pulls test dataset from DVC cache.
-- `make download_models` pulls models from DVC cache.
-- `make download_train_ds` downloads training and validation datasets.
 - `make test` runs test with the default configuration and store results to a directory `results/test`.
 - `make unittest` runs unit tests.
 - `make tool_ena` runs tools-off tests with only one tool enabled.
 - `make tool_dis` runs tools-on tests with only one tool disabled.
 - `make tool_perf` runs test `tool_ena` and `tool_dis`.
-- `make train` runs training.
 - `make export_models` exports models to ONNX and CSV files.
 - `make run_docker` runs docker container.
-
-
-## Troubleshooting
-
-### Cannot download checkpoints from sFTP
-
-First of all, check that you can connect to sFTP (step 5 in Set-up section). In the case of success try to run a test again.
-
-Otherwise you may use http mirror for this and download checkpoints from global sFTP
-manually by running a command: `make download_dvc_cache`
