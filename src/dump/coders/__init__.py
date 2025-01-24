@@ -30,6 +30,10 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-from .encoder import DumpEncoder, def_base_parser as dump_base_parser, def_dump_arguments, DumpEncoderProcess
+from .encoder import DumpEncoder, DumpEncoderProcess
+from .decoder import DumpDecoder, DumpDecoderProcess
+from .common import def_dump_arguments
 
-__all__ = ['DumpEncoder', "dump_base_parser", "def_dump_arguments", "DumpEncoderProcess"]
+__all__ = ['DumpEncoder', 'DumpEncoderProcess', 
+           'DumpDecoder', 'DumpDecoderProcess',
+           'def_dump_arguments']

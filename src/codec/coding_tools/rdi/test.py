@@ -52,7 +52,7 @@ class TestRecoTask(unittest.TestCase):
 
     def dvc_pull(self, file_list: List[str]) -> int:
         cmd = [sys.executable, '-m', 'dvc', 'pull'] + [f'{x}.dvc' for x in file_list]
-        os.system(' '.join(cmd) + " > /dev/null")
+        os.system(' '.join(cmd) + " > /dev/null 2>&1")
 
     # Test
     def test_rdi(self):
@@ -75,7 +75,7 @@ class TestRecoTask(unittest.TestCase):
             cmd_decoder = [sys.executable, "-m", "src.reco.coders.decoder",
                            tmp_bin_path,
                            os.path.join(tmpdir, "tmp.png"),
-                           "--device", "cpu",
+                           # "--device", "cpu",
                            ]
             dec_ans = subprocess.call(cmd_decoder, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.assertEqual(dec_ans, 0, "Decoder crashed")

@@ -1,8 +1,15 @@
-# JPEG-AI Verification model
+# JPEG-AI Reference software
 
-## JPEG-AI Verification software guideline
+This software package is the reference software for Rec. ITU-T T.840.1 | ISO/IEC 6048-1 JPEG AI learning-based image coding system (JPEG-AI). The reference software includes both encoder and decoder functionality.
+Reference software is useful in aiding users of a image coding standard to establish and test conformance and interoperability, and to educate users and demonstrate the capabilities of the standard. For these purposes, this software is provided as an aid for the study and implementation of JPEG-AI.
+The software has been jointly developed by the ITU-T Video Coding Experts Group (VCEG, Question 6 of ITU-T Study Group 16) and Joint Technical Committee ISO/IEC JTC 1, Information technology, Subcommittee SC 29, Coding of audio, picture, multimedia and hypermedia information.
+A software manual, which contains usage instructions, can be found in the "docs" subdirectory of this software package.
+The source code is stored in a Git repository. The most recent version can be retrieved using the following commands:
 
-You can find JPEG-AI Verification software guideline in [output document of ISO](https://sd.iso.org/documents/ui/#!/browse/iso/iso-iec-jtc-1/iso-iec-jtc-1-sc-29/iso-iec-jtc-1-sc-29-wg-1/library/6/98-Sydney/OUTPUT%20N-documents/wg1n100450-098-ICQ-JPEG%20AI%20Verification%20software%20guidelines) or [here](./docs/docx/wg1n100450.docx).
+```
+git clone https://gitlab.com/wg1/jpeg-ai/jpeg-ai-reference-software.git
+cd jpeg-ai-reference-software
+```
 
 ## System requirments
 1. Ubuntu Linux 18.04 or later
@@ -10,6 +17,7 @@ You can find JPEG-AI Verification software guideline in [output document of ISO]
 2. List of packages (you may run `make setup_system` to install them):
     - doxygen 1.8.13
     - graphviz 2.40.1
+    - git-lfs 3.0.2
 
 ## Setup Environment
 
@@ -20,7 +28,7 @@ You can find JPEG-AI Verification software guideline in [output document of ISO]
     - Docker container.
         To get Docker container run a command: `make run_docker`.
 
-2. Build C++ libraries: `make build_test_libs`.
+2. Build C++ libraries for testing: `make build_test_libs`.
 
 ## Downloading datasets and models
 
@@ -45,16 +53,6 @@ make download_models
 
 ## Evaluation of the reconstruction task
 
-Activate conda environment: 
-```
-conda activate jpeg_ai_vm
-```
-
-Building C++ libraries:
-```
-make build_test_libs
-```
-
 Evaluation over all images in the dataset:
 
 ```
@@ -69,7 +67,7 @@ Use the following command line to encode an image:
 python -m src.reco.coders.encoder <IMAGE_PATH> <OUTPUT_STREAM_PATH> [--set_target_bpp <TARGET_BPPm100>] [--cfg <CFG1> [<CFG2> [<CFG3> ...]]]
 ```
 
-where `<IMAGE_PATH>` is a path to the input image in PNG format, `<OUTPUT_STREAM_PATH>` is a path to the output bitstream, `<TARGET_BPPm100>` is a target bit per pixel multiplied by 100. Specify a list of the configuration files of the encoding. Configuration files load one by one. In a case of running tests without any tool, the command line is: `--cfg cfg/tools_off.json cfg/oper_point/<OPER_POINT>.json`, where `<OPER_POINT>` is `bopEnc_sopDec`, `bop` or `hop`. In a case of running tests without all tools, the command line is: `--cfg cfg/tools_on.json cfg/oper_point/<OPER_POINT>.json`. To run test with enabling only particular tools, use the following command line: `--cfg cfg/tools_off.json cfg/tools/<TOOL1>.json [cfg/tools/<TOOL2>.json ...] cfg/oper_point/<OPER_POINT>.json`. Where `<TOOLN>.json` is one of the files from cfg/tools directory.
+where `<IMAGE_PATH>` is a path to the input image in PNG format, `<OUTPUT_STREAM_PATH>` is a path to the output bitstream, `<TARGET_BPPm100>` is a target bit per pixel multiplied by 100. Specify a list of the configuration files of the encoding. Configuration files load one by one. In a case of running tests without any tool, the command line is: `--cfg cfg/tools_off.json cfg/profiles/<PROFILE>.json`, where `<PROFILE>` is `simple`, `main` or `high`. In a case of running tests without all tools, the command line is: `--cfg cfg/tools_on.json cfg/profiles/<PROFILE>.json`. To run test with enabling only particular tools, use the following command line: `--cfg cfg/tools_off.json cfg/tools/<TOOL1>.json [cfg/tools/<TOOL2>.json ...] cfg/profiles/<PROFILE>.json`. Where `<TOOLN>.json` is one of the files from cfg/tools directory.
 
 
 Run the following command to decode the bitstream file:
@@ -81,16 +79,21 @@ python -m src.reco.coders.decoder <INPUT_STREAM_PATH> <OUTPUT_PNG_IMAGE_PATH>
 where `<INPUT_STREAM_PATH>` is the path to the bitstream, `<OUTPUT_PNG_IMAGE_PATH>` is the path to the output PNG file.
 
 
-## Training
+## Documentation
 
-You can run training by a command:
-```
-make train
-```
+You may find slides with SW design [here](docs/ppt/VM.pptx).
 
-### Quantization of the models
 
-Command `./scripts/models_processing/all.sh` quantize and rearrange models' weights.
+
+An example of a command line for training you can find in a file `scripts/train.sh`.
+Additional information about setting parameters of training you can find [here](src/train/README.md).
+
+### Quantization of trained models
+
+Description of quantization process you can find in a [file](docs/md/quantization.md).
+
+## Progressive decoding
+To enable the progressive decoding functionality, please run `bash scripts/progressive_decoding/reorder.sh` to make the latent tensor be arranged in decerasing entropy order across the channel dimension.
 
 
 ### Checkpoints

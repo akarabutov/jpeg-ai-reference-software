@@ -36,9 +36,8 @@ import os.path
 import numpy as np
 import torch
 
-from src.codec.common import ColorSpace, Image, Decisions
+from src.codec.common import Image, Decisions
 from src.codec.entropy_coding import create_lh_ecmodule
-from src.codec.metrics import MSSSIM
 
 from ..interfaces import MultiToolsEngine, RdoPreProcInterface, ToolEngine
 ##
@@ -61,6 +60,7 @@ class BitrateMatcher(RdoPreProcInterface):
     def process(self, multitool: MultiToolsEngine, ori_img: Image, *args, **kwargs):
 
         logger = self.logger
+
         if self.use_default == 1:
             best_beta_dist_log_Y, best_beta_dist_log_UV, best_tool_idx = self.skip_matching()
         else:
@@ -121,6 +121,7 @@ class BitrateMatcher(RdoPreProcInterface):
             if bit_diff < bit_diff_max:
                 bit_diff_max = bit_diff
                 use_idx = tool_idx
+            torch.cuda.empty_cache()
 
         multitool.active_tool_idx = use_idx
         self.beta_min, self.beta_max = multitool.tools[use_idx].BDL_range

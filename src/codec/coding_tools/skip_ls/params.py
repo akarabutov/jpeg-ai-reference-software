@@ -44,11 +44,6 @@ class SkipModeParams(ParamsBase):
         add_arg('thr_skip',
                 type=float,
                 default=382)   
-        add_arg('use_cube_flags',
-                type=int,
-                choices=[0,1],
-                default=1,
-                help=r'Flag of usage CUBE flags')
         add_arg('skip_judge_thr',
                 type=int,
                 default=3,

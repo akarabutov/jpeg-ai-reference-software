@@ -1,3 +1,35 @@
+# The copyright in this software is being made available under the BSD
+# License, included below. This software may be subject to other third party
+# and contributor rights, including patent rights, and no such rights are
+# granted under this license.
+#
+# Copyright (c) 2010-2022, ITU/ISO/IEC
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice,
+# this list of conditions and the following disclaimer.
+# * Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+# * Neither the name of the ITU/ISO/IEC nor the names of its contributors may
+# be used to endorse or promote products derived from this software without
+# specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+# THE POSSIBILITY OF SUCH DAMAGE.
+
 import os
 
 import cv2
@@ -13,6 +45,7 @@ class DataClass:
         self.data_range = [0, 1]
         self.yuv_data = {}
         self.rgb_data = None
+        self.yuv_format = '444'
         self.shape = []  # height, width
         self.bitdepth = -1
 
@@ -32,6 +65,7 @@ class DataClass:
                                           fmt=fmt,
                                           device=device,
                                           out_plane_norm=self.data_range)
+            self.yuv_format = fmt
 
             for plane in yuv_data:
                 self.yuv_data[plane] = DataClass.round_plane(yuv_data[plane], def_bits)
@@ -55,6 +89,7 @@ class DataClass:
             yuv_t = self.rgb_to_yuv(self.rgb_data, color_conv).clamp(min(self.data_range),
                                                                      max(self.data_range))
             yuv_t = DataClass.round_plane(yuv_t, def_bits)
+            self.yuv_format = '444'
             self.shape = yuv_t.shape[-2:]
             bitdepth_ans = def_bits
             self.yuv_data = {'Y': yuv_t[0, 0], 'U': yuv_t[0, 1], 'V': yuv_t[0, 2]}
@@ -69,15 +104,24 @@ class DataClass:
         data.data_range = [0, 1]
 
         image.convert_range_(data.data_range)
-        image.to_444_()
-        data.yuv_data = {
-            "Y": image.get_component("a")[0, 0, :, :].clone(),
-            "U": image.get_component("b")[0, 0, :, :].clone(),
-            "V": image.get_component("c")[0, 0, :, :].clone(),
-        }
-        image.to_RGB_()
-
-        data.rgb_data = image.get_tensor().clone()
+        data.yuv_format = image.format
+        if image.is_YUV():
+            data.yuv_data = {
+                "Y": image.get_component("a")[0, 0, :, :].clone(),
+                "U": image.get_component("b")[0, 0, :, :].clone(),
+                "V": image.get_component("c")[0, 0, :, :].clone(),
+            }
+            image.to_444_()
+            image.to_RGB_()
+            data.rgb_data = image.get_tensor().clone()
+        else:
+            data.rgb_data = image.get_tensor().clone()
+            image.to_YUV_()
+            data.yuv_data = {
+                "Y": image.get_component("a")[0, 0, :, :].clone(),
+                "U": image.get_component("b")[0, 0, :, :].clone(),
+                "V": image.get_component("c")[0, 0, :, :].clone(),
+            }
         data.shape = image.shape[-2:]
         data.bitdepth = image.bit_depth
 
@@ -389,211 +433,9 @@ class MSSSIMTorch(MetricParent):
         return ans
 
 
-class MSSSIM_IQA(MetricParent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, name='MS-SSIM (IQA)')
-        from .thirdparty.IQA_optimization.IQA_pytorch.MS_SSIM import MS_SSIM
-        self.ms_ssim = MS_SSIM(channels=1)
-
-    def calc(self, orig, rec):
-        ans = 0.0
-        if 'Y' not in orig.yuv_data or 'Y' not in rec.yuv_data:
-            return -100.0
-        plane = 'Y'
-        b = orig.yuv_data[plane].unsqueeze(0).unsqueeze(0)
-        a = rec.yuv_data[plane].unsqueeze(0).unsqueeze(0)
-        a = self.pad_tensor_till_size(a, 164)
-        b = self.pad_tensor_till_size(b, 164)
-        ans = self.ms_ssim(a, b, as_loss=False).item()
-
-        return ans
-
-
-class PSNR_HVS(MetricParent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, name='PSNR_HVS')
-
-    def pad_img(self, img, mult):
-        import math
-
-        import torch.nn.functional as F
-        h, w = img.shape[-2:]
-        w_diff = int(math.ceil(w / mult) * mult) - w
-        h_diff = int(math.ceil(h / mult) * mult) - h
-        return F.pad(img, (0, w_diff, 0, h_diff), mode='replicate')
-
-    def calc(self, orig, rec):
-        from psnr_hvsm import psnr_hvs_hvsm
-
-        a = orig.yuv_data['Y']
-        b = rec.yuv_data['Y']
-        a = DataClass.convert_range(a, orig.data_range, [0, 1])
-        b = DataClass.convert_range(b, rec.data_range, [0, 1])
-        a_img = self.pad_img(a.unsqueeze(0).unsqueeze(0), 8).squeeze()
-        b_img = self.pad_img(b.unsqueeze(0).unsqueeze(0), 8).squeeze()
-        a_img = a_img.cpu().numpy().astype(np.float64)
-        b_img = b_img.cpu().numpy().astype(np.float64)
-
-        p_hvs, p_hvs_m = psnr_hvs_hvsm(a_img, b_img)
-
-        return p_hvs
-
-
-class VIF_IQA(MetricParent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, name='VIF')
-        from .thirdparty.IQA_optimization.IQA_pytorch import VIFs
-        self.vif = VIFs(channels=1)
-        # import pyiqa
-        # self.fsim = pyiqa.create_metric('vif')
-    def calc(self, orig, rec):
-        ans = 0.0
-        if 'Y' not in orig.yuv_data or 'Y' not in rec.yuv_data:
-            return -100.0
-        plane = 'Y'
-        b = DataClass.convert_range(orig.yuv_data[plane].unsqueeze(0).unsqueeze(0),
-                                    orig.data_range, [0, 1])
-        a = DataClass.convert_range(rec.yuv_data[plane].unsqueeze(0).unsqueeze(0), rec.data_range,
-                                    [0, 1])
-        self.vif = self.vif.to(a.device)
-        a = self.pad_tensor_till_size(a, 64)
-        b = self.pad_tensor_till_size(b, 64)
-        ans = self.vif(a, b, as_loss=False).item()
-
-        return ans
-
-
-class FSIM_IQA(MetricParent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, name='FSIM')
-        from .thirdparty.IQA_optimization.IQA_pytorch import FSIM
-        self.fsim = FSIM(channels=3)
-        # import pyiqa
-        # self.fsim = pyiqa.create_metric('fsim')
-    def calc(self, orig, rec):
-        ans = 0.0
-
-        b = orig.rgb_data
-        a = rec.rgb_data
-        self.fsim = self.fsim.to(a.device)
-        ans = self.fsim(a, b, as_loss=False).item()
-
-        return ans
-
-
-class NLPD_IQA(MetricParent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, name='NLPD')
-        from .thirdparty.IQA_optimization.IQA_pytorch import NLPD
-        self.chan = 1
-        self.nlpd = NLPD(channels=self.chan)
-
-    def calc(self, orig, rec):
-        ans = 0.0
-        if 'Y' not in orig.yuv_data or 'Y' not in rec.yuv_data:
-            return -100.0
-        if self.chan == 1:
-            plane = 'Y'
-            b = orig.yuv_data[plane].unsqueeze(0).unsqueeze(0)
-            a = rec.yuv_data[plane].unsqueeze(0).unsqueeze(0)
-        elif self.chan == 3:
-            b = DataClass.convert_yuvdict_to_tensor(orig.yuv_data, orig.yuv_data['Y'].device)
-            a = DataClass.convert_yuvdict_to_tensor(rec.yuv_data, rec.yuv_data['Y'].device)
-        self.nlpd = self.nlpd.to(a.device)
-        a = self.pad_tensor_till_size(a, 128)
-        b = self.pad_tensor_till_size(b, 128)
-        ans = self.nlpd(a, b, as_loss=False).item()
-
-        return ans
-
-
-class IWSSIM(MetricParent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, name='IW-SSIM')
-        from .IW_SSIM_PyTorch import IW_SSIM
-        self.iwssim = IW_SSIM()
-
-    def calc(self, orig, rec):
-        ans = 0.0
-        if 'Y' not in orig.yuv_data or 'Y' not in rec.yuv_data:
-            return -100.0
-        plane = 'Y'
-        # IW-SSIM takes input in a range 0-255
-        a = DataClass.convert_range(orig.yuv_data[plane], orig.data_range, [0, 255])
-        b = DataClass.convert_range(rec.yuv_data[plane], rec.data_range, [0, 255])
-
-        torch.backends.cudnn.allow_tf32 = False
-        a = self.pad_tensor_till_size(a, 256)
-        b = self.pad_tensor_till_size(b, 256)
-
-        ans = self.iwssim.test(a.detach().cpu().numpy(), b.detach().cpu().numpy(), device=a.device)
-
-        return ans.item()
-
-
-class VMAF(MetricParent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, name='VMAF')
-        import platform
-        if platform.system() == 'Linux':
-            self.URL = 'https://github.com/Netflix/vmaf/releases/download/v2.2.1/vmaf'
-            self.OUTPUT_NAME = os.path.join(os.path.dirname(__file__), 'vmaf.linux')
-        else:
-            # TODO: check that
-            self.URL = 'https://github.com/Netflix/vmaf/releases/download/v2.2.1/vmaf.exe'
-            self.OUTPUT_NAME = os.path.join(os.path.dirname(__file__), 'vmaf.exe')
-
-    def download(self, url, output_path):
-        import requests
-        r = requests.get(url, stream=True)  # , verify=False)
-        if r.status_code == 200:
-            with open(output_path, 'wb') as f:
-                for chunk in r:
-                    f.write(chunk)
-
-    def check(self):
-        import stat
-        if not os.path.exists(self.OUTPUT_NAME):
-            self.download(self.URL, self.OUTPUT_NAME)
-        # make executlabe should it not be
-        st = os.stat(self.OUTPUT_NAME)
-        os.chmod(self.OUTPUT_NAME, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-    def calc(self, orig, rec):
-        import subprocess
-        import tempfile
-        fp_o = tempfile.NamedTemporaryFile(delete=False)
-        fp_r = tempfile.NamedTemporaryFile(delete=False)
-        orig.write_yuv(fp_o, self.bits)
-        rec.write_yuv(fp_r, self.bits)
-
-        out_f = tempfile.NamedTemporaryFile(delete=False)
-        out_f.close()
-
-        self.check()
-
-        args = [
-            self.OUTPUT_NAME, '-r', fp_o.name, '-d', fp_r.name, '-w',
-            str(orig.shape[1]), '-h',
-            str(orig.shape[0]), '-p', '444', '-b',
-            str(self.bits), '-o', out_f.name, '--json'
-        ]
-        subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        import json
-        with open(out_f.name, 'r') as f:
-            tmp = json.load(f)
-        ans = tmp['frames'][0]['metrics']['vmaf']
-
-        os.unlink(fp_o.name)
-        os.unlink(fp_r.name)
-        os.unlink(out_f.name)
-
-        return ans
-
-
 class MetricsFabric:
     metrics_list = [
-        'msssim_torch', 'msssim_iqa', 'psnr', 'vif', 'fsim', 'nlpd', 'iw-ssim', 'vmaf', 'psnr_hvs'
+        'msssim_torch', 'psnr'
     ]
 
     def __init__(self, bits={}, max_vals={}):
@@ -623,22 +465,8 @@ class MetricsFabric:
         ans = None
         if name == 'msssim_torch':
             ans = MSSSIMTorch(**params)
-        elif name == 'msssim_iqa':
-            ans = MSSSIM_IQA(**params)
         elif name == 'psnr':
             ans = PSNRMetric(**params)
-        elif name == 'vif':
-            ans = VIF_IQA(**params)
-        elif name == 'fsim':
-            ans = FSIM_IQA(**params)
-        elif name == 'nlpd':
-            ans = NLPD_IQA(**params)
-        elif name == 'iw-ssim':
-            ans = IWSSIM(**params)
-        elif name == 'vmaf':
-            ans = VMAF(**params)
-        elif name == 'psnr_hvs':
-            ans = PSNR_HVS(**params)
         else:
             raise NotImplementedError
 
@@ -767,7 +595,7 @@ class MetricsProcessor:
             if m_t in self.metrics:
                 m = self.metrics_inst[m_t]
                 if m.metric_name == 'psnr' and self.jvet_psnr:
-                    max_val = 256 * (1 << (bits - 8))
+                    max_val = 255 * (1 << (bits - 8))
                 else:
                     max_val = (1 << bits) - 1
                 m.set_bd_n_maxval(bits, max_val)

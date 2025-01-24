@@ -161,7 +161,7 @@ class SepChannelsSGMMTool(ToolEngine):
     def get_base_tile_params(self, tile_manager):
         tile_manager.NumSamplesInRegion = self.get_owner_param('NumSamplesInRegion', None)
         # Only tested 1024x1024 region size, remove this check if further tests are supported
-        assert tile_manager.NumSamplesInRegion in [-1, 0, 1024 * 1024]
+        #assert tile_manager.NumSamplesInRegion in [-1, 0, 1024 * 1024]
         
         tile_manager.region_partitioning_flag = self.get_owner_param('region_partitioning_flag')
         if tile_manager.region_partitioning_flag:
@@ -170,8 +170,8 @@ class SepChannelsSGMMTool(ToolEngine):
         else:
             tile_manager.numHorRegions = 1
             tile_manager.numVerRegions = 1
-        tile_manager.hyper_decoder_overlap_in_latent_samples = self.get_owner_param('hyper_decoder_overlap_in_latent_samples')
-        tile_manager.mcm_overlap_in_latent_samples = self.get_owner_param('mcm_overlap_in_latent_samples')
+        tile_manager.HyperDecoderOverlap = self.get_owner_param('HyperDecoderOverlap')
+        tile_manager.McmOverlap = self.get_owner_param('McmOverlap')
         # 1 indicates using marker-based bitstream structure, and all regions are independent
         tile_manager.region_residual_in_its_own_substream_flag = self.get_owner_param('region_residual_in_its_own_substream_flag')
         
@@ -400,6 +400,7 @@ class SepChannelsSGMMTool(ToolEngine):
             assert abs(tmp - int(tmp)) < 1E-5
             log2_num_threads_r_minus1 = int(tmp) - 1
             ec.encode(log2_num_threads_r_minus1, bits_count=2, name=f'log2_num_threads_r_minus1[{self.ccs_id}]')
+        ec.encode(self.common_modules.num_chs, bits_count=8, name=f'num_chs[{self.ccs_id}]')
     
     def decode_header(self, ec: HeaderCoder):
         multi_threading_r = ec.decode([1], bits_count=1, name=f'multi_threading_r[{self.ccs_id}]')
@@ -408,6 +409,10 @@ class SepChannelsSGMMTool(ToolEngine):
             self.num_threads_r = 1 << (log2_num_threads_r_minus1+1)
         else:
             self.num_threads_r = 1
+        
+        num_chs = ec.decode([1], bits_count=8, name=f'num_chs[{self.ccs_id}]').clamp(0, self.chs_ls).item()
+        self.common_modules.num_chs = num_chs
+        self.common_modules.num_decode_chs = min(num_chs,self.common_modules.num_decode_chs)
             
         self._params_loaded()
 

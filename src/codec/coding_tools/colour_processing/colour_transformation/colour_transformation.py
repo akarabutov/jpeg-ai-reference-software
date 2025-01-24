@@ -60,6 +60,9 @@ class ColourTransformation(ColorProcessingBase):
 
     def pre_processing(self, img: Image, *args, **kwargs) -> Image:
         ans = img
+        if self.colour_transform_idx is None:
+            self.colour_transform_idx = 0 if img.is_YUV() else 1
+                
         if self.colour_transform_idx == 1:
             ans = img.clone()
             ans.to_YUV_()
@@ -93,10 +96,9 @@ class ColourTransformation(ColorProcessingBase):
     def post_processing(self, img: Image, *args, **kwargs) -> Image:
         ans = img.clone()
         if self.colour_transform_idx == 0:
-            #ans.to_RGB_()
             pass 
         elif self.colour_transform_idx == 1:
-            ans.to_YUV_()
+            ans.to_RGB_()
         elif self.colour_transform_idx == 2:
 
             s_ver = self.get_owner_param('s_ver')
@@ -136,12 +138,12 @@ class ColourTransformation(ColorProcessingBase):
                 ec.encode(self.colour_transform_offset[i], bits_count=8, name=f'colour_transform_offset[{i}]')
 
     def decode_header(self, ec: HeaderCoder):
-        self.colour_transform_idx = ec.decode([1], 2, name='colour_transform_idx')
+        self.colour_transform_idx = ec.decode([1], 2, name='colour_transform_idx').item()
         if self.colour_transform_idx == 2:
             for i in range(3):
                 for j in range(3):
-                    self.colour_transform_matrix[3*i+j] = (ec.decode([1], bits_count=8, name=f'colour_transform_matrix[{i}][{j}]'))
+                    self.colour_transform_matrix[3*i+j] = (ec.decode([1], bits_count=8, name=f'colour_transform_matrix[{i}][{j}]').item())
             for i in range(3):
-                self.colour_transform_offset[i] = (ec.decode([1], bits_count=8, name=f'colour_transform_offset[{i}]'))
+                self.colour_transform_offset[i] = (ec.decode([1], bits_count=8, name=f'colour_transform_offset[{i}]').item())
             self._params_loaded()
             self.update_inverse_matrix()

@@ -32,13 +32,14 @@
 
 import io as IO
 import cv2
-from typing import Tuple
+from typing import Tuple, List, Union
 
 import numpy as np
 import torch
 from PIL import Image, ImageCms
 
 from .ranges_ops import RangesOps
+from .pgx import PGXReader, PGXWriter
 
 
 class ImageIO:
@@ -112,3 +113,16 @@ class ImageIO:
                 cv2.imwrite(file_path, img.astype(np.uint8))
             else:
                 cv2.imwrite(file_path, img.astype(np.uint16))        
+                
+    @staticmethod
+    def read_pgx(file_path: str) -> List[torch.Tensor]:
+        reader = PGXReader(file_path)
+        out_tensors = reader.read()        
+        return out_tensors
+    
+    @staticmethod
+    def write_pgx(file_path: str,
+                  tensors: Union[torch.Tensor, List[torch.Tensor]],
+                  float_scale_factor: float = 1.0) -> None:
+        writer = PGXWriter(file_path, scale_factor=float_scale_factor)
+        writer.write(tensors)

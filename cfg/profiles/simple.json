@@ -1,0 +1,5 @@
+{
+	"!include": ["../oper_point/bopEnc_sopDec.json"],
+    "decoder_profile_id": 0,
+    "synthesis_transform_id": [0]
+}

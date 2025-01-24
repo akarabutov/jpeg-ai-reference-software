@@ -91,6 +91,12 @@ class CommonEncDecModules(ToolEngine):
         self._register_load_state_dict_pre_hook(self._load_state_dict_hook)
         self.clipping_mode = 0
         
+    def _params_loaded(self):
+        if self.num_chs is None:
+            self.num_chs = self.chs_ls
+        self.num_chs = max(0, min(self.num_chs, self.chs_ls))
+        if self.num_decode_chs is None:
+            self.num_decode_chs = self.num_chs
         
     def build_model(self):
         self.log_k = (np.log(self.sigma_quant_max) - np.log(self.sigma_quant_min)) / (self.sigma_quant_level-1)
@@ -127,7 +133,8 @@ class CommonEncDecModules(ToolEngine):
                     quantize_func=self.quant_dequant,
                     skip_cube_thr = self.skip_mode.skip_cube_thr,
                     cube_size = self.skip_mode.cube_size,
-                    cube_chan = self.skip_mode.cube_chan)        
+                    cube_chan = self.skip_mode.cube_chan,
+                    num_decode_chs=self.num_chs)        
         self._set_int_entropy_pipeline_params()
 
     def _set_int_entropy_pipeline_params(self):
@@ -451,12 +458,15 @@ class CommonEncDecModules(ToolEngine):
             # self.logger.info(f"The second control point is {TensorOps.get_hash(resi_dq_full)}\n")
         else:
             y_rec_resi, _ = self.quant_dequant(y_hat - psi, tool_params)
+            y_rec_resi[:,self.num_chs:] = 0
             y_rec = y_rec_resi + psi
             # generate cube flag, using cube flag to get final skip mask
             cube_flag = self.skip_mode.gen_skip_cubeflag(y_rec, y_org)
             cube_flags_full = self.skip_mode.convert_cubeflag_map(cube_flag, y_org.shape)
             tool_params['mask2'] = torch.logical_or(mask2, cube_flags_full)
             resi_dq_full, resi_q_full = self.quant_dequant(y_hat-psi, tool_params)
+            resi_dq_full[:,self.num_chs:] = 0
+            resi_q_full[:,self.num_chs:] = 0
             y_rec = resi_dq_full + psi
             # self.logger.info(f"The second control point is {TensorOps.get_hash(resi_dq_full)}\n")
 
@@ -727,9 +737,9 @@ class CommonEncDecModules(ToolEngine):
 
         # self.logger.info(f"The first control point is {TensorOps.get_hash(residual_hat[masks])}\n")
         with self.set_ec_context(ec, "r", region_idx):
-            ec.encode_sgt(residual_hat,
-                        scale_log,
-                        masks,
+            ec.encode_sgt(residual_hat[:, :self.num_chs],
+                        scale_log[:,:self.num_chs],
+                        masks[:,:self.num_chs],
                         entropy_prob_model=self.entropy,
                         name=f'{self.owner.name} y_hat')
 
@@ -944,8 +954,8 @@ class CommonEncDecModules(ToolEngine):
     def _cal_step_size(self, lh, lw):
         num_threads = self.get_owner_param('num_threads_r')
         delta_num_elements = num_threads * 4 # number of elements of each layer should be multiple of 4 * num_ans_threads
-        step_size = max(min(self.num_decode_chs, self.chs_ls), 1)
-        for item in range(1, min(self.num_decode_chs, self.chs_ls) + 1):
+        step_size = max(min(self.num_decode_chs, self.num_chs), 1)
+        for item in range(1, min(self.num_decode_chs, self.num_chs) + 1):
             if int(lh * lw * item) % delta_num_elements == 0:
                 step_size = item
                 break
@@ -964,18 +974,18 @@ class CommonEncDecModules(ToolEngine):
         self.update_entropy_model()
 
         with self.set_ec_context(ec, "r", region_idx):
-            if self.num_decode_chs is not None and self.num_decode_chs >= 0:
-                step_size = self._cal_step_size(lh=scale_log.shape[2], lw=scale_log.shape[3])
-                rv = torch.zeros(scale_log.shape, device=scale_log.device, dtype=torch.float32)
-                for item in range(0, min(self.num_decode_chs, self.chs_ls), step_size):
-                    id_layer0 = item
-                    id_layer1 = min(id_layer0 + step_size, self.chs_ls)
-                    scale_log2dec = scale_log[:, id_layer0:id_layer1, :, :]
-                    masks2dec = masks[:, id_layer0:id_layer1, :, :]
-                    rv_from_dec = ec.decode_sgt(scale_log2dec, masks2dec, entropy_prob_model=self.entropy, name=f'{self.owner.name} y_hat')
-                    rv[:, id_layer0:id_layer1, :, :] = rv_from_dec
-            else:
-                rv = ec.decode_sgt(scale_log, masks, entropy_prob_model=self.entropy, name=f'{self.owner.name} y_hat')
+            #if self.num_decode_chs is not None and self.num_decode_chs >= 0:
+            step_size = self._cal_step_size(lh=scale_log.shape[2], lw=scale_log.shape[3])
+            rv = torch.zeros(scale_log.shape, device=scale_log.device, dtype=torch.float32)
+            for item in range(0, min(self.num_decode_chs, self.num_chs), step_size):
+                id_layer0 = item
+                id_layer1 = min(id_layer0 + step_size, self.num_chs)
+                scale_log2dec = scale_log[:, id_layer0:id_layer1, :, :]
+                masks2dec = masks[:, id_layer0:id_layer1, :, :]
+                rv_from_dec = ec.decode_sgt(scale_log2dec, masks2dec, entropy_prob_model=self.entropy, name=f'{self.owner.name} y_hat')
+                rv[:, id_layer0:id_layer1, :, :] = rv_from_dec
+            #else:
+            #    rv = ec.decode_sgt(scale_log, masks, entropy_prob_model=self.entropy, name=f'{self.owner.name} y_hat')
         # self.logger.info(f"The first control point is {TensorOps.get_hash(rv[masks].to(dtype=torch.int16))}\n")
 
         return rv

@@ -324,7 +324,7 @@ class EfficientICCIFilter(FilterBase):
             Returns the filtered image
         """
 
-        if self.get_owner_param('s_ver')!=1 and self.get_owner_param('s_hor')!=1:
+        if self.get_owner_param('s_ver')!=1 or self.get_owner_param('s_hor')!=1:
             self.set_enable(False)
             return imgs
         
@@ -478,9 +478,15 @@ class EfficientICCIFilter(FilterBase):
         logger.info(
             f'eICCI YUV Filter processed (enc) {test_e_time - test_s_time:.5} seconds. Filters {self.models_idxes.model_state_per_tile} used'
         )
-        img_flt = Image.create_from_tensor(img_flt, self.internal_range, color_space='yuv')
+        img_flt = Image.create_from_tensor(img_flt, 
+                                           self.internal_range, 
+                                           bit_depth=img.bit_depth,
+                                           color_space='yuv')
 
         img_flt.convert_range_(input_range)
+        output_fmt = Image.get_format_from_subsampling(self.get_owner_param('s_ver'), self.get_owner_param('s_hor'))
+        img_flt.to_format_(output_fmt)
+        
         # self.logger.debug(f"The eICCI control point is {TensorOps.get_hash(img_flt.get_tensor())}\n")
         return [img_flt] + imgs[1:]
 
@@ -539,7 +545,10 @@ class EfficientICCIFilter(FilterBase):
 
             tiling.assign_data(img_flt, assigned_tile, assigned_tile_data)
 
-        img_flt = Image.create_from_tensor(img_flt, self.internal_range, color_space='yuv')
+        img_flt = Image.create_from_tensor(img_flt, 
+                                           self.internal_range, 
+                                           bit_depth=img.bit_depth,
+                                           color_space='yuv')
 
         img_flt.clip_data_()
         test_e_time = time.time()
@@ -547,8 +556,8 @@ class EfficientICCIFilter(FilterBase):
             f'eICCI YUV Filter processed (dec) {test_e_time - test_s_time:.5} seconds. Filters {self.models_idxes.model_state_per_tile} used'
         )
         img_flt.convert_range_(input_range)
-        if self.get_owner_param('s_ver')==2 and self.get_owner_param('s_hor')==2:
-            img_flt.to_420_()
+        output_fmt = Image.get_format_from_subsampling(self.get_owner_param('s_ver'), self.get_owner_param('s_hor'))
+        img_flt.to_format_(output_fmt)
         # self.logger.debug(f"The eICCI control point is {TensorOps.get_hash(img_flt.get_tensor())}\n")
         return [img_flt] + imgs[1:]
 

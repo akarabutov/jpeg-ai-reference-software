@@ -34,6 +34,7 @@ from builtins import staticmethod
 
 from typing import List, Tuple
 import math
+import numpy as np
 
 import torch
 import re
@@ -91,6 +92,8 @@ class CcsGvaeSGMM(CoreModelBase):
                                    enable_flag_name='gain_3D_enable_flag')
                
         self._quantizers_proxy = HeaderProxy(self.models_list, Quantizer, False)
+        self.McmOverlap = 0
+        self.HyperDecoderOverlap = 0
                 
     def get_sgm_entropy_model(self):
         return self.model_y.get_sgm_entropy_model()
@@ -127,14 +130,17 @@ class CcsGvaeSGMM(CoreModelBase):
         """
         return list(Image.scale_size(list(args), 1 / float(scale)))
     
+    def _params_loaded(self) -> None:
+        self.McmOverlap = self.mcm_overlap_in_latent_samples * 4
+        self.HyperDecoderOverlap = self.hyper_decoder_overlap_in_latent_samples * 2
 
     def synthesisTileToRegion(self,model, tileIdx, full_img_height, full_img_width):
             if model.common_modules.tile_manager_hyper.region_residual_in_its_own_substream_flag == 0:
                 return 0
             numHorRegions = model.common_modules.tile_manager_hyper.numHorRegions
             numVerRegions = model.common_modules.tile_manager_hyper.numVerRegions
-            verRegionSize = int((((full_img_height + 511) // 512) // numHorRegions) * 512)
-            horRegionSize = int((((full_img_width + 511) // 512) //numVerRegions) * 512)
+            verRegionSize = int(math.floor(math.floor((full_img_height + 127) / 128) / numVerRegions) * 128)
+            horRegionSize = int(math.floor(math.floor((full_img_width + 127) / 128) / numHorRegions) * 128)
             tile_size = model.tile_manager_synthesis.tile_size
             if tile_size == 0:
                 tile_size = int(math.sqrt(model.tile_manager_synthesis.numSamplesPerTile))
@@ -157,8 +163,8 @@ class CcsGvaeSGMM(CoreModelBase):
                 self.region_residual_in_its_own_substream_flag = 0
             else:
                 step = int(math.sqrt(self.NumSamplesInRegion))
-                self.numHorRegions = max(1, math.floor(height / step))
-                self.numVerRegions = max(1, math.floor(width / step))
+                self.numHorRegions = max(1, math.floor(width / step))
+                self.numVerRegions = max(1, math.floor(height / step))
                 self.region_partitioning_flag = 1
         self.set_ec_params()
 
@@ -209,28 +215,36 @@ class CcsGvaeSGMM(CoreModelBase):
         Returns:
             decisions (Decisions): a dict with latent and hyper latent tensors
         """
-        self.model_y.beta_displacement_log = self.owner.beta_displacement_log_Y
-        self.model_uv.beta_displacement_log = self.owner.beta_displacement_log_UV
+        clip_min, clip_max = self.BDL_clipping_range #here add cliping
+        self.model_y.beta_displacement_log = np.clip(self.owner.beta_displacement_log_Y, clip_min, clip_max)
+        self.model_uv.beta_displacement_log = np.clip(self.owner.beta_displacement_log_UV, clip_min, clip_max)
+        
         c_ver = self.get_owner_param('c_ver')
         c_hor = self.get_owner_param('c_hor')
         img.to_YUV_()
         img.convert_range_(self.get_internal_data_range())
         ############### for RGB input
         h, w = img.shape[-2:]
-        img.pad_(w % 2, h % 2, mode='replicate')
+        img.pad_(w % 2, h % 2, mode='replicate', comp_list=['a'])
         luma = img.get_component('a')
         chroma_sup_info = F.pixel_unshuffle(luma, 2)
-        if (c_ver==2 and c_hor==2):
-            img.to_420_()
-        elif (c_ver != c_hor):
-            # 422 case
-            raise NotImplementedError
-        if (c_ver==1 and c_hor==1):
+        chrom_subsmpl_fmt = Image.get_format_from_subsampling(c_ver, c_hor)
+        img.to_format_(chrom_subsmpl_fmt)
+
+        if (c_ver==1 and c_hor==1):  # 444
+            img.pad_(w % 2, h % 2, mode='replicate', comp_list=['b', 'c'])
             chroma = F.pixel_unshuffle(torch.cat((img.get_component('b'),img.get_component('c')), dim=1), 2)
-        elif (c_ver==2 and c_hor==2):  # for 420 
+        elif (c_ver==2 and c_hor==2):  # 420 
             chroma = torch.cat((img.get_component('b').repeat(1, 4, 1, 1),img.get_component('c').repeat(1, 4, 1, 1)), dim=1)
+        elif (c_ver==1 and c_hor==2):
+            # 422 case
+            img.pad_(0, h%2, mode='replicate', comp_list=['b', 'c'])
+            c1 = img.get_component('b')[:,:,::2,:].repeat(1, 2, 1, 1)
+            c2 = img.get_component('b')[:,:,1::2,:].repeat(1, 2, 1, 1)
+            c3 = img.get_component('c')[:,:,::2,:].repeat(1, 2, 1, 1)
+            c4 = img.get_component('c')[:,:,1::2,:].repeat(1, 2, 1, 1)
+            chroma = torch.cat((c1, c2, c3, c4), dim=1)
         else:
-            # 444 -> 422, 422 -> 420
             raise NotImplementedError
         chroma = torch.cat( (chroma_sup_info, chroma), dim=1 )        
         if 'model_y' not in decision and 'model_uv' not in decision:
@@ -275,6 +289,8 @@ class CcsGvaeSGMM(CoreModelBase):
         rec_V = rec_UV[:, 1:2]
         c_ver = self.get_owner_param('c_ver')
         c_hor = self.get_owner_param('c_hor')
+        s_ver = self.get_owner_param('s_ver')
+        s_hor = self.get_owner_param('s_hor')
 
         img_fmt = Image.get_format_from_subsampling(c_ver, c_hor)
         ans = Image.create_from_tensors(rec_Y,
@@ -284,6 +300,8 @@ class CcsGvaeSGMM(CoreModelBase):
                                         format=img_fmt,
                                         color_space='yuv',
                                         bit_depth=self.get_owner_param('image_data_bits'))
+        out_img_fmt = Image.get_format_from_subsampling(s_ver, s_hor)
+        ans.to_format_(out_img_fmt)
 
         return ans
     
@@ -531,8 +549,10 @@ class CcsGvaeSGMM(CoreModelBase):
             self.region_residual_in_its_own_substream_flag = int(
                 ec.decode([1], 1, name='region_residual_in_its_own_substream_flag').item())
             if self.region_residual_in_its_own_substream_flag == 0:
-                self.hyper_decoder_overlap_in_latent_samples = int(ec.decode([1], 2 ** 4 - 1, name='hyper_decoder_overlap_in_latent_samples').item()) + 1
-                self.mcm_overlap_in_latent_samples = int(ec.decode([1], 2 ** 6 - 1, name='mcm_overlap_in_latent_samples').item()) + 1
+                self.hyper_decoder_overlap_in_latent_samples = int(ec.decode([1], bits_count=2, name='hyper_decoder_overlap_in_latent_samples').item())
+                self.HyperDecoderOverlap = self.hyper_decoder_overlap_in_latent_samples * 2
+                self.mcm_overlap_in_latent_samples = int(ec.decode([1], bits_count=4, name='mcm_overlap_in_latent_samples').item()) 
+                self.McmOverlap = self.mcm_overlap_in_latent_samples * 4
 
         self._quantizers_proxy.decode_headers(ec, False)
                 
@@ -563,9 +583,11 @@ class CcsGvaeSGMM(CoreModelBase):
             ec.encode(self.region_residual_in_its_own_substream_flag, 1,
                 name="region_residual_in_its_own_substream_flag")
             if self.region_residual_in_its_own_substream_flag == 0:
-                ec.encode(self.hyper_decoder_overlap_in_latent_samples-1, 2 ** 4 - 1,
+                #assert (self.hyper_decoder_overlap_in_latent_samples & 0x1) == 0
+                #assert (self.mcm_overlap_in_latent_samples & 0x1) == 0
+                ec.encode(self.hyper_decoder_overlap_in_latent_samples, bits_count=2,
                         name="hyper_decoder_overlap_in_latent_samples")
-                ec.encode(self.mcm_overlap_in_latent_samples-1, 2 ** 6 - 1,
+                ec.encode(self.mcm_overlap_in_latent_samples, bits_count=4,
                         name="mcm_overlap_in_latent_samples")
                 
         self._quantizers_proxy.encode_headers(ec, False)
