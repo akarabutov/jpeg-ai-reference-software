@@ -81,8 +81,7 @@ class TestRecoTask(unittest.TestCase):
     def convert_png2yuv(self, png_path:str, yuv_base_path:str, yuv_name_prefix:str, yuv_format: str = '444', yuv_bd: int = 8) -> str:
         img = Image.read_file(png_path)
         img.to_YUV_()
-        if yuv_format == '420':
-            img.to_420_()
+        img.to_format_(yuv_format)
         h,w = img.shape[-2:]
         yuv_name = f"{yuv_name_prefix}_{w}x{h}_YUV{yuv_format}_{yuv_bd}bit.yuv"
         yuv_path = os.path.join(yuv_base_path, yuv_name)
@@ -105,7 +104,7 @@ class TestRecoTask(unittest.TestCase):
     def run_reco_test_short(self, img_path, results_path, additional_args:List[str]=list()) -> Tuple[str, str]:
         # Run encoder
         bin_path = os.path.join(results_path, "bin.bin")
-        args = ["--cfg", "cfg/tools_off.json", "cfg/oper_point/bop.json"] + additional_args
+        args = ["--cfg", "cfg/tools_off.json", "cfg/profiles/main.json"] + additional_args
         enc_ans = self.run_encoder(img_path, bin_path, args)
         self.assertEqual(enc_ans, 0, r"Encoder crashed")
         
@@ -117,20 +116,17 @@ class TestRecoTask(unittest.TestCase):
         return bin_path, img_output
             
 
-    def run_reco_test_full(self, img_path, results_path, additional_args=[], run_decoder: bool= True):
+    def run_reco_test_full(self, img_path, results_path, additional_args=[], run_decoder: bool= True, only_cpu: bool = False):
         from scripts.run_eval_script import run_eval_script
+        additional_args += ["--cpu_threads_limit", "1"]
+        if only_cpu:
+            additional_args += ["--only_cpu"]        
         run_eval_script(results_path, "cfg/eval/tools_onoff_enc.json", 
-                        additional_args=["--in_dir", img_path] + additional_args + [
-                                             "--only_cpu", 
-                                             "--calc_encoder_metrics", "0",
-                                             "--cpu_threads_limit", "1",                                              
-                            ],
+                        additional_args=["--in_dir", img_path] + additional_args + ["--calc_encoder_metrics", "0"],
                         verbose=False)
         if run_decoder:
             run_eval_script(results_path, "cfg/eval/tools_onoff_dec.json", 
                             additional_args=["--in_dir", img_path, 
-                                             "--only_cpu", 
-                                             "--cpu_threads_limit", "1",                                              
                                              "--force_encdec_match", "1",
                                              "--calc_decoder_metrics", "0"] + additional_args,
                             verbose=False)
@@ -169,14 +165,16 @@ class TestRecoTask(unittest.TestCase):
                                additional_args=["--use_yuv", "1", "--imgs"] + files_list)
             
     def dvc_pull(self, file_list: List[str]) -> int:
-        cmd = ['dvc', 'pull'] + [f'{x}.dvc' for x in file_list]
-        return subprocess.call(cmd, stdout=subprocess.DEVNULL)
-        
+        cmd = [sys.executable, '-m', 'dvc', 'pull'] + [f'{x}.dvc' for x in file_list]
+        os.system(' '.join(cmd) + " > /dev/null 2>&1")        
             
     ## Tests
     def test_recotask_yuv420(self):
         self.run_recotask_yuv('420')
             
+    def test_recotask_yuv422(self):
+        self.run_recotask_yuv('422')
+
     def test_recotask_yuv444(self):
         self.run_recotask_yuv('444')
         
@@ -215,7 +213,7 @@ class TestRecoTask(unittest.TestCase):
                                     self.assertTrue(name in bit_fl)
                                     f_size = os.stat(os.path.join(bit_dir_path, name)).st_size
                                     cur_bpp = f_size * 8 / s
-                                    self.assertTrue(cur_bpp < bpp * 0.01 * 1.1)                        
+                                    self.assertTrue(cur_bpp < (bpp * 0.01 * 1.1))                      
                                 
         
     def run_recotask_png(self, additional_args:List[str]=list()):
@@ -271,7 +269,7 @@ class TestRecoTask(unittest.TestCase):
                     input_image_fn,
                     output_bin_path,
                     "-target_bpps", "12",
-                    "-target_device", "cpu"
+                    #"-target_device", "gpu"
                     ] + additional_args
         # , stdout=subprocess.STDOUT, env=my_env
         enc_ans = subprocess.call(cmd_encoder, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -281,8 +279,8 @@ class TestRecoTask(unittest.TestCase):
         cmd_decoder = [sys.executable, "-m", "src.reco.coders.decoder",
                     input_bin_path,
                     output_reco_fn,
-                    "--device", "cpu",
-                    "-target_device", "cpu"
+                    #"--device", "cpu",
+                    #"-target_device", "cpu"
                     ] + additional_args 
         dec_ans = subprocess.call(cmd_decoder, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return dec_ans
@@ -340,7 +338,7 @@ class TestRecoTask(unittest.TestCase):
         #self.init_images()
         self.init_images_tiles()
         region_mse = list()
-        additional_args=["--cfg", 'cfg/tools_on.json', 'cfg/oper_point/bop.json']
+        additional_args=["--cfg", 'cfg/tools_on.json', 'cfg/profiles/main.json']
         reduction_fn = lambda x: x[..., 1024:, :]
         with tempfile.TemporaryDirectory() as tmpdir:
             input_fn = os.path.join(self.path_in, self.imgs[0])

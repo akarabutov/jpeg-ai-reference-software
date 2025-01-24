@@ -40,3 +40,4 @@ env.bak/
 venv.bak/
 src/codec/entropy_coding/lib_wrappers/mans/cache*pt
 src/codec/entropy_coding/lib_wrappers/mans/*.so
+src/codec/entropy_coding/lib_wrappers/direct/*.so

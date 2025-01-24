@@ -1,4 +1,4 @@
 {
-    "oper_points": ["bop"],
+    "profiles": ["main"],
     "pre_args": ["--coding_type", "enc"]
 }

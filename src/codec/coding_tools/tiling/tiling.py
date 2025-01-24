@@ -100,9 +100,10 @@ class TileManager(CoderEngine):
         Args:
             ec (HeaderCoder): entropy coding module that is used for encoding the data.
         """
-        max_possible_tile_size = max(self.image_shape[2:])  # self.get_processed_img_shape() can't get the right shape of chroma
-        ec.encode(self.tile_size, max_possible_tile_size, bits_count=13, name='tile_size')
-        ec.encode(self.numSamplesTileOverlap, 128, name='tile_overlap')
+        assert self.tile_size & 0xF == 0
+        assert self.numSamplesTileOverlap & 0xF == 0
+        ec.encode(self.tile_size // 16, bits_count=8, name='synthesis_tile_size')
+        ec.encode(self.numSamplesTileOverlap // 16, bits_count=5, name='synthesis_tile_overlap')
 
     def decode_header(self, ec: HeaderCoder) -> None:
         """Function for decoding header fields for tiling. I.e. tile size and overlap.
@@ -111,11 +112,9 @@ class TileManager(CoderEngine):
             ec (HeaderCoder): entropy coding module that is used for decoding the data.
         """
 
-        img_height, img_width = self.get_processed_img_shape()
-        max_possible_tile_size = max(img_height*2, img_width*2) # self.get_processed_img_shape() can't get the right shape of chroma
         self.tile_size = int(
-            ec.decode([1], max_possible_tile_size, bits_count=13, name='tile_size'))
-        self.numSamplesTileOverlap = int(ec.decode([1], 128, name='tile_overlap'))
+            ec.decode([1], bits_count=8, name='synthesis_tile_size')) * 16
+        self.numSamplesTileOverlap = int(ec.decode([1], bits_count=5, name='synthesis_tile_overlap'))*16
 
     def setup_tiles_enc(self,
                         image_shape: torch.Size,
@@ -718,30 +717,34 @@ class TileManagerHyper(CoderEngine):
             self.vertical_reg_coords_start = [0]
             self.vertical_reg_coords_end = [math.ceil(height / (2 ** depth))]
         else:
-            verRegionSize = (((height + 511) // 512) // self.numHorRegions) * 512
-            horRegionSize = (((width + 511) // 512) // self.numVerRegions) * 512
+            verRegionSize = math.floor(math.floor((height + 127) / 128) / self.numVerRegions) * 128
+            horRegionSize = math.floor(math.floor((width + 127) / 128) / self.numHorRegions) * 128
             width_feature = math.ceil(width / (2 ** depth))
             height_feature = math.ceil(height / (2 ** depth))
-            width_step = math.ceil(horRegionSize / (2 ** depth))
-            height_step = math.ceil(verRegionSize / (2 ** depth))
+            #width_step = math.ceil(horRegionSize / (2 ** depth))
+            #height_step = math.ceil(verRegionSize / (2 ** depth))
             self.horizontal_reg_coords_start = []
             self.horizontal_reg_coords_end = []
             self.vertical_reg_coords_start = []
             self.vertical_reg_coords_end = []
-            for x in range(0, self.numVerRegions):
-                self.horizontal_reg_coords_start.append(x * width_step)
-                if x < self.numVerRegions - 1:
-                    self.horizontal_reg_coords_end.append((x + 1) * width_step)
+            for x in range(0, self.numHorRegions):
+                self.horizontal_reg_coords_start.append(math.floor(x * horRegionSize / (2 ** depth)))
+                #(x * width_step)
+                if x < self.numHorRegions - 1:
+                    self.horizontal_reg_coords_end.append(math.floor((x+1) * horRegionSize / (2 ** depth)))
+                    #((x + 1) * width_step)
                 else:
                     self.horizontal_reg_coords_end.append(width_feature)
-            for y in range(0, self.numHorRegions):
-                self.vertical_reg_coords_start.append(y * height_step)
-                if y < self.numHorRegions - 1:
-                    self.vertical_reg_coords_end.append((y + 1) * height_step)
+            for y in range(0, self.numVerRegions):
+                self.vertical_reg_coords_start.append(math.floor(y * verRegionSize / (2 ** depth)))
+                #(y * height_step)
+                if y < self.numVerRegions - 1:
+                    self.vertical_reg_coords_end.append(math.floor((y+1) * verRegionSize / (2 ** depth)))
+                    #((y + 1) * height_step)
                 else:
                     self.vertical_reg_coords_end.append(height_feature)
-            assert (self.numVerRegions == len(self.horizontal_reg_coords_start))
-            assert (self.numHorRegions == len(self.vertical_reg_coords_start))
+            assert (self.numHorRegions == len(self.horizontal_reg_coords_start))
+            assert (self.numVerRegions == len(self.vertical_reg_coords_start))
 
     def _init(self, y_shape, alignment_size=16) -> None:
         """store the alignment size.
@@ -764,12 +767,12 @@ class TileManagerHyper(CoderEngine):
                                    math.ceil(s[1] / self.z_downscale_factor)))
 
         self.get_base_tile_params(self)
-        self.z_extend = self.hyper_decoder_overlap_in_latent_samples
-        self.psi_overlap_in_latent_samples = self.mcm_overlap_in_latent_samples // 2
+        self.z_extend = self.HyperDecoderOverlap
+        #self.psi_overlap_in_latent_samples = self.McmOverlap >> 2
 
         self.set_enable(self.numHorRegions > 1 or self.numVerRegions > 1)
 
-        if not self.is_enabled:
+        if not self.is_enabled():
             self.numHorRegions, self.numVerRegions = 1, 1
 
         self.chroma = 1 if alignment_size == 8 else 0
@@ -778,7 +781,7 @@ class TileManagerHyper(CoderEngine):
         self.img_tiles_withoutExtend = self._init_latent_tiles(True, 0)
         self.calculate_region_coordinates(s[0], s[1], log2_latent_downscale_factor)
         self.latent_tiles = self._init_latent_tiles()
-        self.latent_tiles_withExtend = self._init_latent_tiles(True, 0 if self.region_residual_in_its_own_substream_flag else self.mcm_overlap_in_latent_samples)
+        self.latent_tiles_withExtend = self._init_latent_tiles(True, 0 if self.region_residual_in_its_own_substream_flag else self.McmOverlap >> 1)
         self.calculate_region_coordinates(s[0], s[1], log2_z_downscale_factor)
         self.z_tiles = self._init_latent_tiles(True, 0 if self.region_residual_in_its_own_substream_flag else self.z_extend)
 
@@ -786,7 +789,7 @@ class TileManagerHyper(CoderEngine):
 
         self.calculate_region_coordinates(s[0], s[1], self.log2_psi_downscale_factor)
         self.psi_tiles = self._init_latent_tiles()
-        self.psi_tiles_withExtend = self._init_latent_tiles(True, 0 if self.region_residual_in_its_own_substream_flag else self.psi_overlap_in_latent_samples)
+        self.psi_tiles_withExtend = self._init_latent_tiles(True, 0 if self.region_residual_in_its_own_substream_flag else self.McmOverlap >> 2)
 
     def regions_generator(self):
         for latent_tile, latent_tile_woExtend, z_tile, z_tile_woExtend, img_tile, img_tile_woExtend in zip(

@@ -155,7 +155,10 @@ class SkipModeCoder(CoderEngine):
             return 1      
 
     def encode_header(self, ec: HeaderCoder):
-        if self.use_cube_flags:
+        ccs_id = self.get_owner_param("ccs_id")
+        use_cube_flags = 0 if self.cube_flag.all().item() else 1
+        ec.encode(use_cube_flags, 1, name=f'use_cube_flags[{ccs_id}]')
+        if use_cube_flags:
             cube_flag_num = self.cube_flag.numel()
             cube_flag_chanfirst = self.cube_flag #.permute(0,2,3,1)
             cube_flag_vector = cube_flag_chanfirst.reshape(cube_flag_num)
@@ -166,7 +169,6 @@ class SkipModeCoder(CoderEngine):
             cube_group_flag = 1 - cube_group_flag
             self.logger.debug(f"Encode cube flags: {self.cube_flag.sum() * 100.0/ cube_flag_num}%")
             
-            ccs_id = self.get_owner_param("ccs_id")
             for i in range(group_num-1):
                 ec.encode(cube_group_flag[i].int(), 1, name=f"cube_group_flag[{ccs_id}]")
                 if cube_group_flag[i] > 0:
@@ -179,8 +181,9 @@ class SkipModeCoder(CoderEngine):
     def decode_header(self, ec: HeaderCoder):
         self.skip_block_size = 1
         self.thr_skip = 382
-        
-        if self.use_cube_flags:
+        ccs_id = self.get_owner_param("ccs_id")
+        use_cube_flags = ec.decode(1, 1, name=f'use_cube_flags[{ccs_id}]').item()
+        if use_cube_flags:
             h_ls, w_ls = self.get_ls_shape(0)
             self.cube_size = 8 
             self.cube_chan = self.chs_ls 
@@ -190,7 +193,6 @@ class SkipModeCoder(CoderEngine):
             cube_flag_num = cubeC*cubeH*cubeW
             group_num = (cube_flag_num + self.cube_group_size -1)// self.cube_group_size
             cube_flag = torch.ones(cube_flag_num)
-            ccs_id = self.get_owner_param("ccs_id")
             for i in range(group_num-1):
                 value = ec.decode(1, 1, name=f"cube_group_flag[{ccs_id}]")
                 if value > 0:

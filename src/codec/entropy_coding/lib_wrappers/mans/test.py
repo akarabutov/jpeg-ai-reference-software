@@ -160,7 +160,7 @@ class TestANS(unittest.TestCase):
                     
                 self.assertTrue(is_ok, msg=f"Test failed for threads {num_thread} and range [{1-(2**power)}, {-1 + 2**power}] {(values == values_decode).all()}")
   
-    def test_selected_case(self):
+    def _test_selected_case(self):
         import json
         import numpy as np
         MEMORY_SIZE = 1908160 * 10

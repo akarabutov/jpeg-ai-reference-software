@@ -72,7 +72,7 @@ class ToolsComposite(ToolEngine):
             
     def set_remove_unused_tools(self, value: bool) -> None:
         self._remove_usused_tools = value
-            
+        
     def get_tool(self, idx = 0) -> ToolEngine:
         name = self._tools_order[idx] if idx < len(self._tools_order) else self._tools_order[-1]
         return getattr(self, name)

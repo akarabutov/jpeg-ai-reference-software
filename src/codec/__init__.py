@@ -61,7 +61,7 @@ def get_cfg_def_dir():
 
 def CTC_get_default_fn():
     info_path = os.path.join(get_cfg_def_dir(), 'info.json')
-    ans = [os.path.join(get_cfg_def_dir(), 'tools-off.json'), os.path.join(get_cfg_def_dir(), 'oper_point', 'base.json')]
+    ans = [os.path.join(get_cfg_def_dir(), 'tools-off.json'), os.path.join(get_cfg_def_dir(), 'profiles', 'high.json')]
     if os.path.exists(info_path):
         with open(info_path, 'r') as f:
             a = json.load(f)
@@ -106,6 +106,9 @@ def get_codec_version():
         return a['version']
     else:
         return 'unknown'
+
+def get_profiles_dir():
+    return os.path.join(get_cfg_def_dir(), "profiles")
 
 
 def get_downloader(models_dir_name='models', *args, **kwargs):

@@ -66,6 +66,11 @@ class CcsCommonParams(ParamsBase):
                      'marker-based bitstream structure if 1 (all independent regions)')
         add_arg('NumSamplesInRegion', type=int, default=-1, help='')
         add_arg('num_threads_z', type=int, default=1, help=r"Number of threads in substream of hyper information (z)")
+        add_arg('BDL_clipping_range',
+                type=int,
+                default=[-1069,702],
+                nargs='+',
+                help='Clip the BDL that out of the range')
         
           
         
@@ -76,12 +81,6 @@ class CcsSepChannelParams(ParamsBase):
         super(CcsSepChannelParams, self).__init__(*args, **kwargs)
 
         add_arg = self.add_single_param
-        add_arg('preprocess_EFE',
-                type=int,
-                default=0,
-                choices=[0, 1],
-                help='preprocess for EFE')
-
         add_arg('z_offset', type=int, default=31, help='z_offset value for all models')
         add_arg('z_range', type=int, default=63, help='z_range value for all models')
         add_arg('num_threads_r', type=int, default=1, help=r"Number of threads in substream of residuals")
@@ -120,10 +119,14 @@ class CcsSharedModelsParams(ParamsBase):
                 default=0,
                 choices=[0, 1],
                 help='Use local context in y_hat for context modeling and GMM')        
+        add_arg('num_chs',
+                default=kwargs.get('num_chs', None),
+                type=int,
+                help='Number of channels in the substream')
         add_arg('num_decode_chs',
                 default=kwargs.get('num_decode_chs', None),
                 type=int,
-                help='Number of decoded channels of latent space for progressive decoding. Should be multiple of 16')
+                help='Number of decoded channels of latent space for progressive decoding. Should be multiple of 16')        
         add_arg('sigma_quant_level', type=int, default=32, help='quantization levels of sigma')
         add_arg('sigma_quant_max', type=float, default=54.82, help='quantization max of sigma')
         add_arg('sigma_quant_min', type=float, default=0.11, help='quantization min of sigma' )

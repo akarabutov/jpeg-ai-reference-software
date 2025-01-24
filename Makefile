@@ -27,10 +27,7 @@ download_train_ds:
 	./scripts/download_train_ds.sh
 
 test:
-	python -m src.reco.scripts.eval --coding_type enc_dec --out_dir results/test --cpu_threads_limit 1
-
-train:
-	./scripts/train.sh
+	python -m src.reco.scripts.eval --coding_type enc_dec --out_dir results/test
 
 all: configure build_test_libs download_test_ds test
 
