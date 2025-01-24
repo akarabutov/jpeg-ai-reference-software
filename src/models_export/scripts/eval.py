@@ -47,9 +47,10 @@ def def_eval_base_parser():
                       help='path to config file(s)')
     this.add_argument('--out_dir', type=str, help='output directory', default='results/onnx')
     this.add_argument('--skip_models_check',
-                      default=True,
+                      default=False,
                       action='store_true',
                       help='Skip models check and downloading')
+    
     
     return this
 

@@ -205,6 +205,7 @@ class EFEnonlinear(FilterBase):
                                         filt_U,
                                         filt_V,
                                         filt.data_range,
+                                        bit_depth=rec.bit_depth,
                                         format=self.out_format,
                                         color_space='yuv')
         

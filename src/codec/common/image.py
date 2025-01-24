@@ -31,7 +31,7 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 
 import math
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 
 import os
 import cv2
@@ -46,7 +46,7 @@ from src.codec.common.ranges_ops import RangesOps
 
 
 class Image:
-    valid_formats: list = ['420', '444']
+    valid_formats: list = ['420', '444', '422']
     valid_subsamplings: dict = {
     #   Format: [ver, hor]
         '444': [1,1],
@@ -120,9 +120,9 @@ class Image:
         return self.valid_subsamplings[self.format]
     
     @staticmethod
-    def get_format_from_subsampling(s_ver, s_hor) -> str:
+    def get_format_from_subsampling(ver, hor) -> str:
         for k,v in Image.valid_subsamplings.items():
-            if s_ver==v[0] and s_hor==v[1]:
+            if ver==v[0] and hor==v[1]:
                 return k
         return None
             
@@ -280,13 +280,14 @@ class Image:
         self.components['b'] = data[:, 1:2]
         self.components['c'] = data[:, 2:3]
 
-    def pad_(self, pad_x, pad_y, mode: str = 'replicate', value: float = 0) -> None:
+    def pad_(self, pad_x, pad_y, mode: str = 'replicate', value: float = 0, comp_list: List[str] = None) -> None:
         if pad_x == 0 and pad_y == 0:
             return
         for c in self.valid_comp_names:
-            self.components[c] = F.pad(self.components[c], (0, pad_x, 0, pad_y),
-                                       mode=mode,
-                                       value=value)
+            if comp_list is None or c in comp_list:
+                self.components[c] = F.pad(self.components[c], (0, pad_x, 0, pad_y),
+                                        mode=mode,
+                                        value=value)
 
     def pad2depth_(self, depth: int) -> None:
         from ..components.base_layers import padding_layer
@@ -298,17 +299,23 @@ class Image:
     def to_(self, *args, **kwargs) -> None:
         for comp in self.components:
             self.components[comp] = self.components[comp].to(*args, **kwargs)
+            
+    def is_YUV(self) -> bool:
+        return self.check_color_space('yuv')
+    
+    def is_RGB(self) -> bool:
+        return self.check_color_space('rgb')
 
     def is_420(self) -> bool:
-        return self.check_color_space('yuv') and self.check_format('420')
+        return self.is_YUV() and self.check_format('420')
 
     def is_444(self) -> bool:
-        return self.check_color_space('yuv') and self.check_format('444')
+        return self.is_YUV() and self.check_format('444')
 
     @staticmethod
-    def scale_size(size: torch.Size, scale: float) -> torch.Size:
-        ans = [0] * 2
-        for i in range(2):
+    def scale_size(size: torch.Size, scale: float, comp_count:int=2) -> torch.Size:
+        ans = list(size[-2:])
+        for i in range(comp_count):
             ans[-i - 1] = int(math.ceil(size[-i - 1] * scale))
         return torch.Size(ans)
 
@@ -319,6 +326,15 @@ class Image:
     @staticmethod
     def calc_chroma_size_420_to_444(size_420: torch.Size) -> torch.Size:
         return Image.scale_size(size_420, 2.0)
+    
+
+    @staticmethod
+    def calc_chroma_size_444_to_422(size_444: torch.Size) -> torch.Size:
+        return Image.scale_size(size_444, 0.5, 1)
+
+    @staticmethod
+    def calc_chroma_size_422_to_444(size_420: torch.Size) -> torch.Size:
+        return Image.scale_size(size_420, 2.0, 1)    
 
     @staticmethod
     def convert_chroma_444_to_420(tensor: torch.Tensor,
@@ -328,14 +344,50 @@ class Image:
             new_size = Image.calc_chroma_size_444_to_420(tensor.shape)
 
         return TensorOps.resize_tensor(tensor, new_size, mode)
-
+    
     def to_420_(self, mode='bilinear') -> None:
         """Convert data to 4:2:0 format
         """
-        if not self.check_format('420'):
+        if self.check_format('444'):
             self.format = '420'
             for c in ['b', 'c']:
                 self.components[c] = self.convert_chroma_444_to_420(self.components[c], mode=mode)
+        elif self.check_format('420'):
+            pass                
+        else:
+            raise NotImplementedError
+
+    @staticmethod
+    def convert_chroma_444_to_422(tensor: torch.Tensor,
+                                  mode='bilinear',
+                                  new_size=None) -> torch.Tensor:
+        if new_size is None:
+            new_size = Image.calc_chroma_size_444_to_422(tensor.shape)
+
+        return TensorOps.resize_tensor(tensor, new_size, mode)    
+
+
+    @staticmethod
+    def convert_chroma_420_to_422(tensor: torch.Tensor,
+                                  mode='bilinear',
+                                  new_size=None) -> torch.Tensor:
+        if new_size is None:
+            new_size = Image.calc_chroma_size_444_to_422(tensor.shape)
+
+        return TensorOps.resize_tensor(tensor, new_size, mode)    
+    
+    def to_422_(self, mode='bilinear') -> None:
+        """Convert data to 4:2:0 format
+        """
+        if self.check_format('444'):
+            self.format = '422'
+            for c in ['b', 'c']:
+                self.components[c] = self.convert_chroma_444_to_422(self.components[c], mode=mode)
+        elif self.check_format('422'):
+            pass
+        else:
+            raise NotImplementedError
+
 
     @staticmethod
     def convert_chroma_420_to_444(tensor: torch.Tensor,
@@ -345,11 +397,20 @@ class Image:
             new_size = Image.calc_chroma_size_420_to_444(tensor.shape)
 
         return TensorOps.resize_tensor(tensor, new_size, mode)
+    
+    @staticmethod
+    def convert_chroma_422_to_444(tensor: torch.Tensor,
+                                  mode='bicubic',
+                                  new_size=None) -> torch.Tensor:
+        if new_size is None:
+            new_size = Image.calc_chroma_size_422_to_444(tensor.shape)
+
+        return TensorOps.resize_tensor(tensor, new_size, mode)    
 
     def to_444_(self, mode='bicubic') -> None:
         """Convert data to 4:4:4 format
         """
-        if not self.check_format('444'):
+        if self.check_format('420'):
             self.format = '444'
             new_height, new_width = self.components['a'].shape[2:]
             for c in ['b', 'c']:
@@ -357,14 +418,30 @@ class Image:
                                                                      new_size=(new_height,
                                                                                new_width),
                                                                      mode=mode)
+        elif self.check_format('422'):
+            self.format = '444'
+            new_height, new_width = self.components['a'].shape[2:]
+            for c in ['b', 'c']:
+                self.components[c] = Image.convert_chroma_422_to_444(self.components[c],
+                                                                     new_size=(new_height,
+                                                                               new_width),
+                                                                     mode=mode)            
+        elif self.check_format('444'):
+            pass
+        else:
+            raise NotImplementedError
                 
     def to_format_(self, format: str) -> None:
         assert format in self.valid_formats
-        if format == '420':
-            self.to_420_()
-        elif format == '444':
-            self.to_444_()
-            
+        if format != self.format:
+            if format == '420':
+                self.to_420_()
+            elif format == '444':
+                self.to_444_()
+            elif format == '422':
+                self.to_422_()
+            else:
+                raise NotImplementedError
 
     def to_YUV_(self, type='709') -> None:
         if not self.check_color_space('yuv'):
@@ -373,6 +450,7 @@ class Image:
             self.convert_range_([0.0, 1.0])
             yuv_data = ColorSpace.rgb_to_yuv(self.get_tensor(), type)
             self._set_data_from_tensor(yuv_data)
+            self.format = '444'
             self.convert_range_(cur_data_range)
 
     def to_RGB_(self, type='709') -> None:
@@ -495,10 +573,12 @@ class Image:
 
         b = default_bits if b is None else b.group("b")
         fmt = default_fmt
-        if "YUV444" in fn:
+        if "444" in fn:
             fmt = "444"
-        elif "YUV420" in fn:
+        elif "420" in fn:
             fmt = "420"
+        elif "422" in fn:
+            fmt = "422"
         elif "sRGB" in fn:
             fmt = "sRGB"
 
@@ -529,8 +609,8 @@ class Image:
 
         if fmt == "420":
             for a in ["U", "V"]:
-                sizes[a][0] >>= 1
-                sizes[a][1] >>= 1
+                sizes[a][0] = (sizes[a][0]+1) >> 1
+                sizes[a][1] = (sizes[a][1]+1) >> 1
         elif fmt == "400":
             yuv_planes = {"Y": None}
             for a in ["U", "V"]:
@@ -538,6 +618,9 @@ class Image:
                 sizes[a][1] = 0
         elif fmt == "444":
             pass
+        elif fmt == "422":
+            for a in ["U", "V"]:
+                sizes[a][1] = (sizes[a][1]+1) >> 1           
         else:
             raise NotImplementedError("The specified yuv format is not supported!")
 

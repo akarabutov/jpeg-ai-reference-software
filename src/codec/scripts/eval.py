@@ -154,11 +154,6 @@ def def_eval_base_parser():
     this.add_argument('--imgs', type=str, nargs="+", default=None, help='List images for processing')
     
     this.add_argument('--overwrite', dest='overwrite', action='store_true')
-
-    this.add_argument('--skip_models_check',
-                      default=True,
-                      action='store_true',
-                      help='Skip models check and downloading')
     
     this.add_argument('--skip_loading_error', 
                       default=False,
@@ -454,17 +449,18 @@ class CodecEval:
                     enc_finished_successfully = False
                     print(f'Encoder was terminated with error, return code {enc_return_code}')
                 fp.close()
+                torch.cuda.empty_cache()
 
             if run_dec:
                 compute_stage = "decoder"
                 fp.open(dec_log_path)
                 ori_file = os.path.abspath(os.path.join(
                     in_dir, input_img_bn)) if not (in_dir is None) and calc_decoder_metrics else None
-                cmd, cmd_args = set_cmd_for_dec(python_path, bit_path, dec_rec_path, gpu_id)
+                cmd, cmd_args = set_cmd_for_dec(python_path, bit_path, dec_rec_path, gpu_id, **kwargs)
                 #cmd_args += additional_cmd_args
+                cmd_args.append("--calc_ptflops")
                 if calc_decoder_metrics:
                     cmd_args.append("--calc_metrics")
-                    cmd_args.append("--calc_ptflops")
                     cmd_args.append("--ori_file")
                     cmd_args.append(ori_file)            
                     cmd_args += metrics_args
@@ -486,6 +482,7 @@ class CodecEval:
                     print('Decoder was terminated with error, return code {}'.format(
                         dec_return_code))
                 fp.close()
+                torch.cuda.empty_cache()
 
             if (coding_type == 'enc_dec' and enc_finished_successfully
                     and dec_finished_successfully) or force_encdec_match:
@@ -496,9 +493,10 @@ class CodecEval:
                 path = os.path.join(comp_log_path, f'{input_img_fn}_{bpp_val:03d}.txt')
                 fp.open(path)
                 if compare_inst is None:
-                    cmd = set_cmd_for_cmp(python_path, out_dir, input_img_fn, bpp_val)
-                    print('Start comparing: {}\n'.format(' '.join(cmd)))
-                    start_and_log_str(cmd, None)
+                    if set_cmd_for_cmp is not None:
+                        cmd = set_cmd_for_cmp(python_path, out_dir, input_img_fn, bpp_val)
+                        print('Start comparing: {}\n'.format(' '.join(cmd)))
+                        start_and_log_str(cmd, None)
                 else:
                     compare_inst.process(enc_log_path, dec_log_path)
                 fp.close()
@@ -678,12 +676,6 @@ class CodecEval:
         gpu_ena_list = config_gpu_list(kwargs)
 
         print(ce_params)
-
-        if not kwargs.get('skip_models_check', False):
-            downloader = get_downloader(kwargs.get('models_dir_name', 'models'))
-            self.ce.download_models_recursively(downloader)
-        if 'skip_models_check' in kwargs:
-            del kwargs['skip_models_check']
 
         timeslot = Timeslot()
         timeslot.set_bgn_time()

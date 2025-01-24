@@ -40,4 +40,4 @@ The user can set tool's configuration of tools individually for each image and e
 
 ## Configuration files for evaluation tool
 
-Directory [`oper_point`](oper_point) has files with description of analyses/synthesis network of the codec for different operation point.
+Directory [`profiles`](profiles) has files with description of analyses/synthesis network of the codec for different operation point.

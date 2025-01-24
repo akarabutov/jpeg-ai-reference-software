@@ -11,12 +11,7 @@
             ${ if args.lr is None: }$ 1e-03 ${ :else: }$ ${ write(args.lr) }$ ${ :end-if }$,
             "--anneal_final_lr",
             ${ if args.anneal_final_lr is None: }$ 1e-04 ${ :else: }$ ${ write(args.anneal_final_lr) }$ ${ :end-if }$,
-                "--train_entropy_n_synth_parts",
-            0,
-            "--train_only_gain_unit",
-            0,
-            "--train_as_dedicated",
-            1,
+            "--frozen_part", "gain_unit",
             "--beta_list", 
             ${ beta }$
         ],
@@ -37,8 +32,7 @@
             ${ if args.lr is None: }$ 1e-04 ${ :else: }$ ${ write(args.lr) }$ ${ :end-if }$,
             "--anneal_final_lr",
             ${ if args.anneal_final_lr is None: }$ 1e-05 ${ :else: }$ ${ write(args.anneal_final_lr) }$ ${ :end-if }$,
-            "--train_as_dedicated",
-            1
+            "--frozen_part", "gain_unit"
         ],
     "Mixed_FixedRate_OnlyDec_20": [
             "--beta_list",
@@ -55,14 +49,9 @@
             ${ if args.base_warmup_epoch is None: }$ 0.1 ${ :else: }$ ${ write(args.base_warmup_epoch) }$ ${ :end-if }$,
             "--lr",
             ${ if args.lr is None: }$ 1e-04 ${ :else: }$ ${ write(args.lr) }$ ${ :end-if }$,
-            "--train_ent_synt_gain_parts",
-            ${ if beta == 0.002: }$ 0 ${ :else: }$ 1 ${ :end-if }$,
-            "--train_entropy_n_synth_parts",
-            ${ if beta == 0.002: }$ 1 ${ :else: }$ 0 ${ :end-if }$,
+            ${ if beta == 0.002: }$ "--frozen_part", "gain_unit",${ :end-if }$
             "--anneal_final_lr",
             ${ if args.anneal_final_lr is None: }$ 1e-05 ${ :else: }$ ${ write(args.anneal_final_lr) }$ ${ :end-if }$,
-            "--train_as_dedicated",
-            1,
             "--enable_gvae",
             ${ if beta == 0.002: }$ 0 ${ :else: }$ 1 ${ :end-if }$
         ],
@@ -86,10 +75,8 @@
             1,
             "--anneal_final_lr",
             1e-5,
-            "--train_dec_part_gain",
-            ${ if beta == 0.002: }$ 0 ${ :else: }$ 1 ${ :end-if }$,
-            "--train_only_gain_unit",
-            ${ if beta == 0.002: }$ 1 ${ :else: }$ 0 ${ :end-if }$,
+            "--frozen_part", "analysis", "entropy",
+            ${ if beta == 0.002: }$ "synthesis", ${ :end-if }$
             "--add_random_noise_for_quantization_y",
             1,
             "--enable_gvae",
@@ -113,9 +100,8 @@
             1e-4,
             "--anneal_final_lr",
             1e-5,
-            "--train_as_dedicated",
-            1, 
+            "--frozen_part", "gain_unit",
             "--collect_only", 
             1
-        ]
+        ]        
 }

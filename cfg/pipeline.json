@@ -428,7 +428,7 @@
 		}
 
 	},
-	"color_processing": {
+	"colour_processing": {
 		"tools": ["colour_transform", "chroma_transform"]
 	}
 }

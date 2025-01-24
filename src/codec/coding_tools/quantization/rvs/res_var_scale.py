@@ -123,7 +123,7 @@ class ResVarScale(QuantizationInterface):
     @property
     def rvs_scale_list(self):
         return self.rvs_scale_list_id1
-
+    
     def decode_header(self, ec: HeaderCoder) -> None:
         """Decode y_max_symbol from header of a bitstream
 
@@ -134,7 +134,9 @@ class ResVarScale(QuantizationInterface):
         self.rvs_enabled = ec.decode([1], max_symbol_value=1, name=f'rvs_enable_flag[{ccs_id}]')
         self.cwg_enabled = ec.decode([1], max_symbol_value=1, name=f'grfs_enable_flag[{ccs_id}]')
         if self.cwg_enabled:
-            self.cwgf = ec.decode(self.chs, 1, name=f'grfs_channel_flag[{ccs_id}]').unsqueeze(-1).unsqueeze(-1)
+            num_chs = self.get_owner_param('num_chs', self.chs)
+            self.cwgf = torch.zeros([self.chs, 1, 1], dtype=torch.int32)
+            self.cwgf[:num_chs] = ec.decode(num_chs, 1, name=f'grfs_channel_flag[{ccs_id}]').unsqueeze(-1).unsqueeze(-1)
             
     def encode_header(self, ec: HeaderCoder) -> None:
         """Encode y_max_symbol to header of a bitstream
@@ -150,7 +152,8 @@ class ResVarScale(QuantizationInterface):
                 max_symbol_value=1,
                 name=f'grfs_enable_flag[{ccs_id}]')  
         if self.cwg_enabled:
-            ec.encode(self.cwgf, 1, name=f'grfs_channel_flag[{ccs_id}]')
+            num_chs = self.get_owner_param('num_chs', self.chs)
+            ec.encode(self.cwgf[:num_chs], 1, name=f'grfs_channel_flag[{ccs_id}]')
     
     #@timeit
     def buildTables(self):

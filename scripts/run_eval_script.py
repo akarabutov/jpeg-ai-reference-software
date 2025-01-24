@@ -1,3 +1,35 @@
+# The copyright in this software is being made available under the BSD
+# License, included below. This software may be subject to other third party
+# and contributor rights, including patent rights, and no such rights are
+# granted under this license.
+#
+# Copyright (c) 2010-2022, ITU/ISO/IEC
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice,
+# this list of conditions and the following disclaimer.
+# * Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+# * Neither the name of the ITU/ISO/IEC nor the names of its contributors may
+# be used to endorse or promote products derived from this software without
+# specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+# THE POSSIBILITY OF SUCH DAMAGE.
+
 import os
 import sys
 import argparse
@@ -87,11 +119,11 @@ def compute(cfg):
     base_path = cfg.get('base_path', '')
     ouput_base_dir = cfg.get('ouput_base_dir', '')
     cfg_name = cfg.get('cfg_name', '')
-    append_op_config = cfg.get('append_op_config', True)
+    append_profile_config = cfg.get('append_profile_config', True)
     pre_args = cfg.get('pre_args', [])
     post_args = cfg.get('post_args', [])
     verbose = cfg.get('verbose', False)
-    op = cfg.get('op', 'base')
+    profile = cfg.get('profile', 'base')
     gpu_id = set_gpu_id(gpu_list)
     cmd = [
         python_path,
@@ -108,8 +140,8 @@ def compute(cfg):
             if "cfg" in k:
                 if not isinstance(v, list):
                     v = [v]
-                if append_op_config:
-                    v += [f"./cfg/oper_point/{op}.json"]
+                if append_profile_config:
+                    v += [f"./cfg/profiles/{profile}.json"]
             cmd.append(k)
             if isinstance(v, list):
                 cmd += v
@@ -133,21 +165,21 @@ def compute(cfg):
         
 def process_simulations(base_path: str, ouput_base_dir: str, module_name: str, gpu_list: List, cfgs: dict, additional_args: List = None, verbose:int=1) -> List:
     configs = list()
-    oper_points = cfgs.get('oper_points')
-    append_op_config = cfgs.get('append_op_config', True)
+    profiles = cfgs.get('profiles')
+    append_profile_config = cfgs.get('append_profile_config', True)
     pre_args = cfgs.get('pre_args', [])
     post_args = cfgs.get('post_args', []) + (additional_args if additional_args is not None else [])
     for cfg_k, cfg_v in cfgs.get('configurations', dict()).items():
-        for op in oper_points:
+        for profile in profiles:
             elem = {
                 'cfg_name': cfg_k,
                 'cfg': cfg_v,
-                'op': op,
+                'profile': profile,
                 'module_name': module_name,
-                'ouput_base_dir': os.path.join(ouput_base_dir, op),
+                'ouput_base_dir': os.path.join(ouput_base_dir, profile),
                 'base_path': base_path,
                 'gpu_list': gpu_list,
-                'append_op_config': append_op_config,
+                'append_profile_config': append_profile_config,
                 'pre_args': pre_args,
                 'post_args': post_args,
                 'verbose': verbose

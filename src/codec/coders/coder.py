@@ -81,7 +81,7 @@ def def_base_parser(task_name: str, **kwargs):
                       default=False,
                       action="store_true",
                       help='Calculate metrics')
-
+    
     this.add_argument('--models_dir_name',
                       type=str,
                       default="models",
@@ -189,7 +189,8 @@ class CodecCoder:
         ap = self.base_parser
         if cmd_args_add:
             metric_proc.add_arguments(ap)
-        metric_proc.parse_arguments(ap, cmd_args)
+
+        args = metric_proc.parse_arguments(ap, cmd_args)
         self.metric_proc = metric_proc
 
     def init_backend_model(self):
@@ -229,7 +230,7 @@ class CodecCoder:
         if build_model:
             ce.eval()
             ce.build_models_recursively()
-
+            
         return kwargs, params, unknown_params
 
     # ##################################################################################################################
@@ -349,11 +350,11 @@ class CodecCoder:
         raise NotImplementedError
     
     # metric methods
-    def compute_and_print_metrics(self, shape, bit_fpath, raw_fpath, rec_fpath):
+    def compute_and_print_metrics(self, shape, bit_fpath, raw_fpath, rec_fpath, device = None):
         bpp = self.metric_proc.compute_bpp(bit_fpath, shape)
         w, h, b, fmt = Image.extract_info(raw_fpath, default_bits=8)
         device = self.ce.device if TORCH_OLDER_THAN_1_13_1 else torch.device("cpu")
-        if fmt == "420":  # yuv 444 is also hanndled by process_image_files
+        if fmt != "sRGB" and fmt != "444":  # yuv 444 is also hanndled by process_image_files
             metrics = self.metric_proc.process_yuv_files(
                 shape,
                 raw_fpath,
@@ -376,7 +377,10 @@ class CodecCoder:
         rec_image = self.rec_image
         rec_image.write_file(rec_fn)
         
-        self.compute_and_print_metrics(rec_image.shape, bit_fn, ori_fn, rec_fn)
+        try:
+            self.compute_and_print_metrics(rec_image.shape, bit_fn, ori_fn, rec_fn)
+        except RuntimeError as e:
+            self.compute_and_print_metrics(rec_image.shape, bit_fn, ori_fn, rec_fn, device=torch.device("cpu"))
         if not store_rec:
             os.remove(rec_fn)
         

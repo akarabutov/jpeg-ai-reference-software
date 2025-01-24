@@ -42,7 +42,7 @@ from src.codec.common import determinism_on_eval, Decisions
 
 
 class Context(nn.Module, ContextUtils):
-    def __init__(self, chs, quantize_func, skip_cube_thr=None, cube_size=None, cube_chan=None):
+    def __init__(self, chs, quantize_func, skip_cube_thr=None, cube_size=None, cube_chan=None, num_decode_chs:int=None):
         super(Context, self).__init__()
         self.quantize_func = quantize_func
         self.chs = chs
@@ -56,6 +56,7 @@ class Context(nn.Module, ContextUtils):
         self.skip_cube_thr = skip_cube_thr
         self.cube_size = cube_size
         self.cube_chan = cube_chan
+        self.num_decode_chs = num_decode_chs
         
     def export_models(self, output_dir: str, opset_version=11):
         os.makedirs(output_dir, exist_ok=True)
@@ -125,6 +126,8 @@ class Context(nn.Module, ContextUtils):
                 }
 
                 diff = input_list[stage_id_cur] - mu_stage
+                if self.num_decode_chs is not None:
+                    diff[:,self.num_decode_chs:] = 0
                 resi_dq, resi_q = self.quantize_func(data=diff, tool_params=tools_cur_stage)
                 #generate cube flag, using cube flag to control skip
                 if self.cube_size is not None: # TODO: enable cube in training

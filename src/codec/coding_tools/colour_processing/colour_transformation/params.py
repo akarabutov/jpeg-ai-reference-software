@@ -38,7 +38,7 @@ class ColorTransformParams(ParamsBase):
         super(ColorTransformParams, self).__init__(*args, **kwargs)
         add_arg = self.add_single_param
         
-        add_arg('colour_transform_idx', type=int, default=0, help=r'Colour transform index: in a case of 0 the output is RGB, in a case of 1 the output is YUV, in a case of 2 the output has custom colour format')
+        add_arg('colour_transform_idx', type=int, default=None, help=r'Colour transform index: in a case of 0 the output is RGB, in a case of 1 the output is YUV, in a case of 2 the output has custom colour format. By default, preprocess selects between 0 and 1 automatically based on the input colour format')
 
         add_arg('colour_transform_offset', type=int, default=[0,0,0], nargs="+", help=r'Offsets for user-defined colour transform', metavar="[0-255]")
         add_arg('colour_transform_matrix', type=int, default=[1,0,0, 0,1,0, 0,0,1], nargs="+", help=r'Matrix for user-defined colour transform', metavar="[0-255]")

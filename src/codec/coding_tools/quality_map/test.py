@@ -49,7 +49,7 @@ class TestQMapTask(unittest.TestCase):
         ans = list()
         rec_top = size // 4
         rec_bottom = 3 * size // 4
-        t = torch.zeros((1,3,(size+9),(size+9)), dtype=torch.float, device=torch.device('cpu'))
+        t = torch.zeros((1,3,size,(size+7)), dtype=torch.float, device=torch.device('cpu'))
         t[:,:,rec_top:rec_bottom, rec_top:rec_bottom] = 1.0
         img = Image.create_from_tensor(t)
         fn = os.path.join(output_dir, 'img.png')
@@ -71,20 +71,16 @@ class TestQMapTask(unittest.TestCase):
         return ans
         
     
-    def run_reco_test(self, img_path, results_path, additional_args=[], run_decoder: bool= True):
+    def run_reco_test(self, img_path, results_path, additional_args=[], run_decoder: bool= True, only_cpu: bool = False):
         from scripts.run_eval_script import run_eval_script
+        if only_cpu:
+            additional_args += ["--only_cpu",  "--cpu_threads_limit", "1"]        
         run_eval_script(results_path, "cfg/eval/tools_onoff_enc.json", 
-                        additional_args=["--in_dir", img_path] + additional_args + [
-                                             "--only_cpu", 
-                                             "--calc_encoder_metrics", "0",
-                                             "--cpu_threads_limit", "1",                                              
-                            ],
+                        additional_args=["--in_dir", img_path] + additional_args + ["--calc_encoder_metrics", "0"],
                         verbose=False)
         if run_decoder:
             run_eval_script(results_path, "cfg/eval/tools_onoff_dec.json", 
                             additional_args=["--in_dir", img_path, 
-                                             "--only_cpu", 
-                                             "--cpu_threads_limit", "1",                                              
                                              "--force_encdec_match", "1",
                                              "--calc_decoder_metrics", "0"] + additional_args,
                             verbose=False)
@@ -130,7 +126,8 @@ class TestQMapTask(unittest.TestCase):
                         args += ["--cfg", "./cfg/tools/quality_map.json", "-model.CCS_SGMM.tools_common.qual_map.ROI_map_in_file", mask_path]
                     self.run_reco_test(path_in, path_out, 
                                        additional_args=args,
-                                       run_decoder=False)
+                                       run_decoder=False,
+                                       only_cpu=False)
                     for root, _, files in os.walk(path_out):
                         cur_dir = os.path.basename(root)
                         if cur_dir == "rec":

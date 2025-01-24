@@ -115,6 +115,7 @@ def process_encoder(coder: RecoEncoder, cmd_args: List[str] = None, loadNbuild_m
     timeslot.set_bgn_time()
 
     decisions = coder.encode_stream(kwargs)
+    coder.ce.check_complience()
     rec_path = kwargs.get('rec_path')
     rec_fpath = rec_path
     is_write_rec = rec_path is not None
@@ -133,7 +134,7 @@ def process_encoder(coder: RecoEncoder, cmd_args: List[str] = None, loadNbuild_m
         ori_fn = kwargs.get('input_path', None)
         if ori_fn is not None:
             output_ext = os.path.splitext(ori_fn)[1]
-        
+    
     if not is_write_rec:
         import tempfile
         f = tempfile.NamedTemporaryFile(delete=False, suffix=output_ext)

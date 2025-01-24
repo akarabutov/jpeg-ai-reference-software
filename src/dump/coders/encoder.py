@@ -32,12 +32,10 @@
 
 import os
 
-import torch
-
-from argparse import ArgumentParser
 from src.codec.common import Decisions
 from typing import List
 
+from .common import CommonDump, def_dump_arguments
 from ...reco.coders import RecoEncoder, def_reco_base_parser, reco_encoder_main
 from ...codec.coders import def_encoder_parser_decorator
 from ...codec.scripts import CoderProcess
@@ -48,16 +46,6 @@ from ...codec.scripts import CoderProcess
 # ######################################################################################################################
 #  Parameter methods
 # ######################################################################################################################
-
-def def_dump_arguments(parser: ArgumentParser) -> ArgumentParser:
-    parser.add_argument('--latents_list',
-                      type=str,
-                      nargs="+",
-                      default=['model_y.z_hat', 'model_y.y_hat', 'model_uv.z_hat', 'model_uv.y_hat'],
-                      help='List of tensors for dumping')
-    
-    return parser
-    
 
 def def_base_parser():
     this = def_reco_base_parser('Dump')
@@ -72,41 +60,15 @@ class DumpEncoder(RecoEncoder):
     def __init__(self, base_parser, parser_decorator, name='dump'):
         super(DumpEncoder, self).__init__(base_parser, parser_decorator, name=name)
         
-    def get_latents_dict(self, latents_list):
-        ans = dict()
-        for l in latents_list:
-            l_sublist = l.split(".")
-            cur_ans = ans
-            for item in l_sublist:
-                if item not in cur_ans:
-                    cur_ans[item] = dict()
-                cur_ans = cur_ans[item]
-        return ans
-
     # ##################################################################################################################
     #  encode stream
     # ##################################################################################################################
-    @staticmethod
-    def store_tensor_recurrently(base_path: str, latent_dict: dict, filename: str, decisions: Decisions) -> None:
-        for n, v in latent_dict.items():
-            path = os.path.join(base_path, n)
-            if len(v) == 0:
-                if isinstance(decisions[n], torch.Tensor):
-                    os.makedirs(path, exist_ok=True)
-                    torch.save(decisions[n], os.path.join(path, filename))
-                else:
-                    raise ValueError("Type of decision isn't torch tensor")
-            else:
-                if n in decisions:
-                    DumpEncoder.store_tensor_recurrently(path, v, filename, decisions[n])
-                else:
-                    raise ValueError(f"Decision doesn't have {n} item")
     
     def encode_stream(self, params):
         decisions = super().encode_stream(params)
         
         
-        latents_dict = self.get_latents_dict(params['latents_list'])
+        latents_dict = CommonDump.get_latents_dict(params['latents_list'])
         out_dir = os.path.dirname(os.path.dirname(params['bin_path']))
         seq_name = os.path.basename(params['input_path'])
         bpp_int = int(self.ce.get_target_bpp() * 100)       
@@ -117,7 +79,7 @@ class DumpEncoder(RecoEncoder):
             seq_name=seq_name,
             bpp_int=bpp_int)
         
-        self.store_tensor_recurrently(out_dir, latents_dict, filename, decisions[model_name])
+        CommonDump.store_tensor_recurrently(out_dir, latents_dict, filename, decisions[model_name], params['output_format'], params['pgx_float_scale_factor'])
 
 
 class DumpEncoderProcess(CoderProcess):

@@ -10,13 +10,9 @@
 	},    
     "model": {
 		"CCS_SGMM":{
-			"preprocess_EFE": 0,
 			"tools_common": {
 				"model_common": {
-					"abs_in_hyperprior": 1,
-					"skip_mode": {
-						"use_cube_flags": 1
-					}
+					"abs_in_hyperprior": 1
 				},
 				"model_y": {
 					"tile_manager_enc": {
