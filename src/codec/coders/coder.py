@@ -350,7 +350,7 @@ class CodecCoder:
         raise NotImplementedError
     
     # metric methods
-    def compute_and_print_metrics(self, shape, bit_fpath, raw_fpath, rec_fpath, device = None):
+    def compute_and_print_metrics(self, shape, bit_fpath, raw_fpath, rec_fpath, device = None, output_fn=None):
         bpp = self.metric_proc.compute_bpp(bit_fpath, shape)
         w, h, b, fmt = Image.extract_info(raw_fpath, default_bits=8)
         device = self.ce.device if TORCH_OLDER_THAN_1_13_1 else torch.device("cpu")
@@ -368,22 +368,19 @@ class CodecCoder:
                 device=device,
             )
 
-        basename = os.path.basename(rec_fpath)
+        basename = os.path.basename(rec_fpath) if output_fn is None else output_fn
         results = self.metric_proc.get_output_str(basename, bpp=bpp, metrics=metrics)
         print(f'=== Metrics ===\nResults: {results}\n=== Metrics ===')  
         
         
-    def compute_metrics(self, store_rec: bool, rec_fn: str, ori_fn: str, bit_fn: str) -> None:
+    def compute_metrics(self, rec_fn: str, ori_fn: str, bit_fn: str, output_fn: str = None) -> None:
         rec_image = self.rec_image
         rec_image.write_file(rec_fn)
         
         try:
-            self.compute_and_print_metrics(rec_image.shape, bit_fn, ori_fn, rec_fn)
+            self.compute_and_print_metrics(rec_image.shape, bit_fn, ori_fn, rec_fn, output_fn=output_fn)
         except RuntimeError as e:
-            self.compute_and_print_metrics(rec_image.shape, bit_fn, ori_fn, rec_fn, device=torch.device("cpu"))
-        if not store_rec:
-            os.remove(rec_fn)
-        
+            self.compute_and_print_metrics(rec_image.shape, bit_fn, ori_fn, rec_fn, device=torch.device("cpu"), output_fn=output_fn)
 
     # ##################################################################################################################
     #  Working with decisions

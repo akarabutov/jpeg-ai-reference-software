@@ -507,14 +507,18 @@ class Image:
             bit_depth (int, optional): output bit-depth of the file. Defaults to None.
             fill_bit (int, optional): value for filling LSB. Defaults to 1.
         """
-        self.to_RGB_()
-        self.clip_data_()
+        if not self.check_color_space("rgb"):
+            print("WARNING: the internal format of the data isn't the same as the output image format. Perform convertion of the data to RGB.")
+        output_rgb = self.clone()
+        output_rgb.to_RGB_()
+        output_rgb.clip_data_()
         bit_shift = 0
         if bit_depth is None:
             bit_depth = self.bit_depth
         if bit_depth > 8:
             bit_shift = 16 - bit_depth
-        ImageIO.write_png(file_path, self.get_tensor(), self.data_range, bit_depth, bit_shift, fill_bit)
+        ImageIO.write_png(file_path, output_rgb.get_tensor(), self.data_range, bit_depth, bit_shift, fill_bit)
+
 
     def write_file(self, file_path: str, bit_depth: int = None, fill_bit:int=1) -> None:
         """Write image to an output file. Its format is determined from the path.
@@ -658,7 +662,8 @@ class Image:
 
     def write_yuv(self, file_path: str, bit_depth: int = None) -> None:
         # assert self.check_format('420')
-        assert self.check_color_space("yuv")
+        if not self.check_color_space("yuv"):
+            print("WARNING: the internal format of the data isn't the same as the output image format. Perform convertion of the data to YUV.")
 
         if bit_depth is None:
             bit_depth = self.bit_depth
@@ -677,6 +682,7 @@ class Image:
 
         # rescale to range of bits
         output_yuv = self.clone()
+        output_yuv.to_YUV_()
         output_yuv.convert_range_((0, (1 << bit_depth) - 1))
         output_yuv.round_data_()
         output_yuv.clip_data_()

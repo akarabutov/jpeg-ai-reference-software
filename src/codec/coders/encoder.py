@@ -59,10 +59,10 @@ def def_encoder_base_parser(task_name: str):
     this.add_argument('--set_target_bpp', type=int, default=None, help='Set target BPP of the final stream')
 
     this.add_argument(
-        "--yuv_output_bit_depth",
+        "--output_bit_depth",
         type=int,
-        default=8,
-        help=r"Use this bit depth for ouput YUV",
+        default=None,
+        help=r"Force to use this bit-depth in the reconstructed image",
     )
 
     return this

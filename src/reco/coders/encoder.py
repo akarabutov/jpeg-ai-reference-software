@@ -135,25 +135,23 @@ def process_encoder(coder: RecoEncoder, cmd_args: List[str] = None, loadNbuild_m
         if ori_fn is not None:
             output_ext = os.path.splitext(ori_fn)[1]
     
-    if not is_write_rec:
-        import tempfile
-        f = tempfile.NamedTemporaryFile(delete=False, suffix=output_ext)
-        rec_fpath = f.name
-        
-    if calc_metrics:
-        ori_fn = kwargs.get('input_path', None)
-        bit_fn = kwargs.get('bin_path', None)
+    if is_write_rec:
         timeslot_dump = Timeslot()    
         timeslot_dump.set_bgn_time()
-        coder.compute_metrics(is_write_rec, rec_fpath, ori_fn, bit_fn)
-        timeslot_dump.set_end_time()
-        print(f'Metrics calculation: {timeslot_dump.to_seconds()} second')
-    elif is_write_rec:
-        timeslot_dump = Timeslot()    
-        timeslot_dump.set_bgn_time()
-        coder.rec_image.write_file(rec_fpath)
+        coder.rec_image.write_file(rec_fpath, bit_depth=kwargs.get('output_bit_depth'))
         timeslot_dump.set_end_time()
         print(f'Dump to file: {timeslot_dump.to_seconds()} second')
+
+    if calc_metrics:
+        import tempfile
+        ori_fn = kwargs.get('input_path', None)
+        bit_fn = kwargs.get('bin_path', None)
+        timeslot_dump = Timeslot()  
+        with tempfile.NamedTemporaryFile(suffix=output_ext) as f:
+            timeslot_dump.set_bgn_time()
+            coder.compute_metrics(f.name, ori_fn, bit_fn, output_fn=os.path.basename(rec_path))
+            timeslot_dump.set_end_time()
+        print(f'Metrics calculation: {timeslot_dump.to_seconds()} second')
 
 
     if rec_path is not None:

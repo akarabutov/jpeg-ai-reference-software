@@ -145,16 +145,17 @@ def process_decoder(coder: DumpDecoder, cmd_args: List[str] = None, loadNbuild_m
     coder.print_image_hash(coder.rec_image)
     timeslot_hash.set_end_time()
 
-    timeslot_dump = None
     calc_metrics = kwargs.get('calc_metrics', False)
+    timeslot_dump = Timeslot()
+    timeslot_dump.set_bgn_time()
+    coder.rec_image.write_file(rec_path, bit_depth=kwargs.get('output_bit_depth'))
+    timeslot_dump.set_end_time()
+
     if calc_metrics:
+        import tempfile
         ori_file = kwargs.get('ori_file', '')
-        coder.compute_metrics(True, rec_path, ori_file, bit_fpath)
-    else:
-        timeslot_dump = Timeslot()
-        timeslot_dump.set_bgn_time()
-        coder.rec_image.write_file(rec_path)
-        timeslot_dump.set_end_time()
+        with tempfile.NamedTemporaryFile(suffix=os.path.splitext(rec_path)[1]) as f:
+            coder.compute_metrics(f.name, ori_file, bit_fpath, output_fn=os.path.basename(rec_path))
     
     if calc_ptflops:
         rec_shape = (coder.rec_image.shape[-1], coder.rec_image.shape[-2])
@@ -163,8 +164,7 @@ def process_decoder(coder: DumpDecoder, cmd_args: List[str] = None, loadNbuild_m
 
     if loadNbuild_models:
         print(f'Loading models: {timeslot_loadmodel.to_seconds()} second')
-    if timeslot_dump is not None:
-        print(f'Dump to file: {timeslot_dump.to_seconds()} second')
+    print(f'Dump to file: {timeslot_dump.to_seconds()} second')
     print(f'Hash calculation: {timeslot_hash.to_seconds()} second')
     coder.save_profilers_results(img_name, None)    
     return 0

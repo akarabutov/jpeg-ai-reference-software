@@ -132,14 +132,22 @@ def process_decoder(coder: RecoDecoder, cmd_args: List[str] = None, loadNbuild_m
 
     timeslot_dump = None
     calc_metrics = kwargs.get('calc_metrics', False)
+
+    timeslot_dump = Timeslot()
+    timeslot_dump.set_bgn_time()
+    coder.rec_image.write_file(rec_path, bit_depth=kwargs.get('output_bit_depth'))
+    timeslot_dump.set_end_time()
+
     if calc_metrics:
+        import tempfile
         ori_file = kwargs.get('ori_file', '')
-        coder.compute_metrics(True, rec_path, ori_file, bit_fpath)
-    else:
-        timeslot_dump = Timeslot()
-        timeslot_dump.set_bgn_time()
-        coder.rec_image.write_file(rec_path)
-        timeslot_dump.set_end_time()
+        ori_ext = os.path.splitext(ori_file)[1]
+        fname_suffix = ori_ext
+        if ori_ext.endswith(".yuv"):
+            s = coder.rec_image.shape
+            fname_suffix = f"{s[-1]}x{s[-2]}_{coder.rec_image.bit_depth}bit_YUV{coder.rec_image.format}{fname_suffix}"
+        with tempfile.NamedTemporaryFile(suffix=fname_suffix) as f:
+            coder.compute_metrics(f.name, ori_file, bit_fpath, output_fn=os.path.basename(rec_path))
     
     if calc_ptflops:
         rec_shape = (coder.rec_image.shape[-1], coder.rec_image.shape[-2])
