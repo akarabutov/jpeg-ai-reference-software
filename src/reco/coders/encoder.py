@@ -149,7 +149,7 @@ def process_encoder(coder: RecoEncoder, cmd_args: List[str] = None, loadNbuild_m
         timeslot_dump = Timeslot()  
         with tempfile.NamedTemporaryFile(suffix=output_ext) as f:
             timeslot_dump.set_bgn_time()
-            coder.compute_metrics(f.name, ori_fn, bit_fn, output_fn=os.path.basename(rec_path))
+            coder.compute_metrics(f.name, ori_fn, bit_fn, output_fn=None if rec_path is None else os.path.basename(rec_path))
             timeslot_dump.set_end_time()
         print(f'Metrics calculation: {timeslot_dump.to_seconds()} second')
 
