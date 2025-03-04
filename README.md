@@ -35,6 +35,7 @@ cd jpeg-ai-reference-software
 Evaluation over all images in the dataset:
 
 ```
+activate jpeg_ai_vm
 make test
 ```
 the results will be stored to a directory `results/test`.
@@ -43,6 +44,7 @@ The script automatically download models and checks there MD5 hashs.
 Use the following command line to encode an image:
 
 ```
+activate jpeg_ai_vm
 python -m src.reco.coders.encoder <IMAGE_PATH> <OUTPUT_STREAM_PATH> [--set_target_bpp <TARGET_BPPm100>] [--cfg <CFG1> [<CFG2> [<CFG3> ...]]]
 ```
 
@@ -52,6 +54,7 @@ where `<IMAGE_PATH>` is a path to the input image in PNG format, `<OUTPUT_STREAM
 Run the following command to decode the bitstream file:
 
 ```
+activate jpeg_ai_vm
 python -m src.reco.coders.decoder <INPUT_STREAM_PATH> <OUTPUT_PNG_IMAGE_PATH> 
 ```
 
