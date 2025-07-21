@@ -26,6 +26,9 @@ download_train_ds:
 test:
 	python -m src.reco.scripts.eval --coding_type enc_dec --out_dir results/test
 
+train:
+	./scripts/train.sh
+
 all: configure build_test_libs download_test_ds test
 
 base_cfgs_img30:
