@@ -42,7 +42,7 @@ import numpy as np
 import pandas as pd
 from torch.utils.tensorboard import SummaryWriter
 
-from scripts.acc_train_scripts.bjontegaard.bjontegaard.functions import bd_rate
+from bjontegaard.functions import bd_rate
 
 
 class Config:
