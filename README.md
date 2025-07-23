@@ -29,6 +29,11 @@ cd jpeg-ai-reference-software
         To get Docker container run a command: `make run_docker`.
 
 2. Build C++ libraries for testing: `make build_test_libs`.
+3. Download all LFS objects: 
+```
+git lfs fetch
+git lfs checkout
+```
 
 ## Downloading datasets for training
 
@@ -41,7 +46,7 @@ The training dataset will be stored to `data/jpegai_training_random_crop` and th
 Evaluation over all images in the dataset:
 
 ```
-activate jpeg_ai_vm
+conda activate jpeg_ai_vm
 make test
 ```
 the results will be stored to a directory `results/test`.
@@ -50,7 +55,7 @@ The script automatically download models and checks there MD5 hashs.
 Use the following command line to encode an image:
 
 ```
-activate jpeg_ai_vm
+conda activate jpeg_ai_vm
 python -m src.reco.coders.encoder <IMAGE_PATH> <OUTPUT_STREAM_PATH> [--set_target_bpp <TARGET_BPPm100>] [--cfg <CFG1> [<CFG2> [<CFG3> ...]]]
 ```
 
@@ -60,7 +65,7 @@ where `<IMAGE_PATH>` is a path to the input image in PNG format, `<OUTPUT_STREAM
 Run the following command to decode the bitstream file:
 
 ```
-activate jpeg_ai_vm
+conda activate jpeg_ai_vm
 python -m src.reco.coders.decoder <INPUT_STREAM_PATH> <OUTPUT_PNG_IMAGE_PATH> 
 ```
 

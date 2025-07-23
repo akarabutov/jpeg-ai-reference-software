@@ -38,6 +38,9 @@ if (( $# > 0 )); then
     env_name=$1
 fi
 
+git lfs fetch
+git lfs checkout
+
 eval "$(conda shell.bash hook)"
 cur_dir=`pwd`
 
