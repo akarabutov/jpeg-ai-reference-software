@@ -18,7 +18,7 @@
     },
     "level_idc1": {
         "0": {
-            "models": [3]
+            "models": [2]
         },
         "1": {
             "models": [2,3]
