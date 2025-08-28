@@ -56,7 +56,7 @@ def get_args(args_list = None):
     parser.add_argument('--data_url', type=str, default='', help='')
     parser.add_argument('--rec_dir', type=str, default='', help=r'Dirtectory for storing reconstructed signals')
     parser.add_argument('--use_scc_dataset', type=str2bool, default=False, help='Use scc dataset or not, defalult True')
-    parser.add_argument('--cfg_path', type=str, nargs="+", default=['tools_off.json', 'profiles/main.json'], help= '')
+    parser.add_argument('--cfg_path', type=str, nargs="+", default=['tools_off.json', 'profiles/base.json'], help= '')
     parser.add_argument('--val_tar_file', type=str, default='', help='')
     parser.add_argument('--gpu_id', type=str, default='0', help='')
     parser.add_argument('--train_cfg_json', type=str, default='cfg/train.json', help='A path to a json file with desciption of training')
