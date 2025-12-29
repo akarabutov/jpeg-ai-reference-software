@@ -580,8 +580,8 @@ class Image:
         wh = re.search(r"(?P<w>\d+)x(?P<h>\d+)", fn)
         b = re.search(r"(?P<b>\d+)bit", fn)
 
-        w = wh.group("w")
-        h = wh.group("h")
+        w = wh.group("w") if wh is not None else -1
+        h = wh.group("h") if wh is not None else -1
 
         b = default_bits if b is None else b.group("b")
         fmt = default_fmt
@@ -675,6 +675,8 @@ class Image:
 
         if bit_depth is None:
             bit_depth = self.bit_depth
+            
+        _, _, bit_depth, fmt = self.extract_info(file_path, bit_depth)
         # yuv = self.yuv_data.copy()
         nr_bytes = np.ceil(bit_depth / 8)
         if nr_bytes == 1:
@@ -691,6 +693,7 @@ class Image:
         # rescale to range of bits
         output_yuv = self.clone()
         output_yuv.to_YUV_()
+        output_yuv.to_format_(fmt)
         output_yuv.convert_range_((0, (1 << bit_depth) - 1))
         output_yuv.round_data_()
         output_yuv.clip_data_()

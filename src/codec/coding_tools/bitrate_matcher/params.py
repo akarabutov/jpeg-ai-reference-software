@@ -38,6 +38,19 @@ class BitrateMatcherParams(ParamsBase):
         super(BitrateMatcherParams, self).__init__(*args, **kwargs)
         add_arg = self.add_single_param
 
+        add_arg('target_tool_idx',
+                type=int,
+                default=-1,
+                help='Target tool idx in a case of disabling of the tool')
+        add_arg('target_beta_disp_Y',
+                type=int,
+                default=0,
+                help='Target beta displacment Y in a case of disabling of the tool')
+        add_arg('target_beta_disp_UV',
+                type=int,
+                default=None,
+                help='Target beta displacment UV in a case of disabling of the tool. It is equal to target_beta_disp_Y by default')
+
         add_arg('tolerance_max',
                 type=float,
                 default=0.01,
