@@ -56,6 +56,14 @@ class BitrateMatcher(RdoPreProcInterface):
         if self.rewrite_beta_list_file and os.path.exists(self.bitrate_config()):
             os.remove(self.bitrate_config())
         self.rewrite_beta_list_file = 0
+        
+    def process_default(self, multitool: MultiToolsEngine) -> None:
+        multitool.active_tool_idx = self.target_tool_idx
+        multitool._set_beta_displacement_log(self.target_beta_disp_Y,  'Y')
+        best_beta_dist_log_UV = self.target_beta_disp_UV
+        if best_beta_dist_log_UV is None:
+            best_beta_dist_log_UV = self.target_beta_disp_Y
+        multitool._set_beta_displacement_log(best_beta_dist_log_UV, 'UV')        
 
     def process(self, multitool: MultiToolsEngine, ori_img: Image, *args, **kwargs):
 

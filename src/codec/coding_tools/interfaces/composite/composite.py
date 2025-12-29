@@ -115,6 +115,8 @@ class ToolsComposite(ToolEngine):
                 for ppt in self.__dict__['preproc_tools']:
                     if ppt.enabled:
                         ppt.process(tv, current_image)
+                    else:
+                        ppt.process_default(tv)
                 img_temp = current_image.clone()
                 img_temp.input_file = current_image.input_file
                 ans[tn] = tv.compress(img_temp, *args, **kwargs)

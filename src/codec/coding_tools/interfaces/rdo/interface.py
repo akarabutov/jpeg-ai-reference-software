@@ -47,6 +47,11 @@ class RdoPreProcInterface(BaseEngine):
 
     def process(self, tool: ToolEngine, ori_img: Image) -> None:
         raise NotImplementedError
+    
+    def process_default(self, tool: ToolEngine) -> None:
+        """Call this function when the tool is disabled
+        """
+        raise NotImplementedError
 
 
 class RdoPostProcInterface(BaseEngine):
