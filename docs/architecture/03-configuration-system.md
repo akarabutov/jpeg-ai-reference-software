@@ -26,6 +26,11 @@ sequence. Files are parsed with `commentjson`, so `//` and `/* */` comments are 
 The per-image files are applied only by the evaluation harness (`CodecEval.codec_stream`) and
 only when `--only_base_config` / `--no_per_ratepoint_config` do not disable them.
 
+This chapter is a reference for *what is in* the configuration files.
+[12 — Parameter resolution](12-parameter-resolution.md) describes the machinery that applies
+them — the `!exclude` directive, the deduplication rules, what the command line does and does not
+contribute, and how `tools_common` / `model_common` actually work.
+
 ## 2. `cfg/info.json` — the release descriptor
 
 ```json

@@ -207,6 +207,10 @@ sequenceDiagram
     CE->>Tools: fetch/checkout via DVC, load state_dict
 ```
 
+[12 — Parameter resolution](12-parameter-resolution.md) covers this machinery in full: how a
+declaration becomes a command-line option, the exact precedence of the sources, and the five
+separate mechanisms by which a value reaches a node it was not written on.
+
 `_params_loaded()` is the single most important hook to know about. It runs *after* the whole
 configuration is known, which is why tools use it to build lookup tables (`ResVarScale.buildTables`,
 `LSBSMode.buildTables`), resolve which checkpoint file belongs to the active beta, and copy

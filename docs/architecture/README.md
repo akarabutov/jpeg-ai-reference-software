@@ -25,6 +25,7 @@ post-filters) is built around those networks.
 | [09 — Coding tools reference](09-coding-tools-reference.md) | Per-tool documentation: purpose, config keys, signalling |
 | [10 — Command-line tools](10-command-line-tools.md) | Every executable entry point and shell/Python utility |
 | [11 — Evaluation and testing](11-evaluation-and-testing.md) | The evaluation harness, metrics, CI, DVC, model management |
+| [12 — Parameter resolution](12-parameter-resolution.md) | How the command line and the config files reach the tool tree |
 
 ## Reading this as HTML
 
