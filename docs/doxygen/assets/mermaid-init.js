@@ -46,15 +46,30 @@
         return document.querySelector('pre.mermaid') !== null;
     }
 
+    function pinNaturalWidth() {
+        // Mermaid emits width="100%", which shrinks a diagram wider than the
+        // text column until its labels are unreadable.  Pin each diagram to its
+        // natural width instead and let pre.mermaid scroll.
+        var svgs = document.querySelectorAll('pre.mermaid svg');
+        for (var i = 0; i < svgs.length; i++) {
+            if (svgs[i].style.maxWidth) {
+                svgs[i].style.width = svgs[i].style.maxWidth;
+            }
+        }
+    }
+
     function init() {
         if (!window.mermaid) {
             return;
         }
         window.mermaid.initialize({
-            startOnLoad: true,
+            startOnLoad: false,
             securityLevel: 'loose',
             theme: 'neutral'
         });
+        window.mermaid
+            .run({ querySelector: 'pre.mermaid' })
+            .then(pinNaturalWidth, pinNaturalWidth);
     }
 
     function note() {

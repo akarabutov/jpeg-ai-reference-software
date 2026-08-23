@@ -20,8 +20,19 @@ pre.mermaid {
 }
 
 pre.mermaid svg {
-    max-width: 100%;
     height: auto;
+    /* Keep the page's line-height out of the diagram: Mermaid sizes each node
+       box from a label measured at the default line-height, so inheriting a
+       larger one clips multi-line labels. */
+    line-height: normal;
+}
+
+/* Mermaid sizes a sequence-diagram note from text measured a shade narrower
+   than it renders it at the inherited 16px, so long notes spill out of their
+   box; 15px is the smallest correction that seats every one of them. */
+pre.mermaid svg .noteText,
+pre.mermaid svg .noteText tspan {
+    font-size: 15px;
 }
 
 p.mermaid-note {

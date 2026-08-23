@@ -583,7 +583,13 @@ main { grid-column: 2; grid-row: 2; }
 
 /* -------------------------------------------------------------------- content */
 main { padding: 2.75rem clamp(1.25rem, 4vw, 3.5rem) 6rem; min-width: 0; }
-.reading { max-width: 46rem; margin: 0 auto; }
+.reading { max-width: 46rem; margin: 0 auto; --figure-bleed: 0rem; }
+/* Prose keeps a comfortable measure; figures are allowed to spill past it into
+   the slack the main column has to spare, so fewer of them need scrolling.
+   The steps are sized to stay inside that slack: the column loses 19rem to the
+   sidebar and 2x3.5rem to padding, and the measure itself is 46rem. */
+@media (min-width: 80rem) { .reading { --figure-bleed: 3rem; } }
+@media (min-width: 90rem) { .reading { --figure-bleed: 8rem; } }
 
 .chapter { scroll-margin-top: 1.5rem; }
 .chapter + .chapter { margin-top: 4.5rem; padding-top: 3rem; border-top: 1px solid var(--rule); }
@@ -664,7 +670,9 @@ td code { font-size: .82em; }
 
 /* ------------------------------------------------------------------- diagrams */
 .diagram {
-  margin: 0 0 1.5rem; padding: 1.1rem;
+  width: calc(100% + 2 * var(--figure-bleed, 0rem));
+  margin: 0 0 1.5rem calc(-1 * var(--figure-bleed, 0rem));
+  padding: 1.1rem;
   background: #f7f7fb; border: 1px solid #dfdfe9; border-radius: 7px;
   box-shadow: var(--shadow); overflow-x: auto;
 }
@@ -672,7 +680,14 @@ td code { font-size: .82em; }
   margin: 0; background: none; border: 0; text-align: center;
   font-size: .8rem; line-height: 1.5; color: #4a4b5c;
 }
-.diagram svg { max-width: 100%; height: auto; }
+/* Mermaid sizes a node box from the label measured at the browser's default
+   line-height; letting the page's 1.65 cascade into the SVG makes the text
+   taller than the box it was measured for, and multi-line labels clip. */
+.diagram svg { height: auto; line-height: normal; }
+/* Mermaid sizes a sequence-diagram note from text measured a shade narrower
+   than it renders it at the inherited 16px, so long notes spill out of their
+   box; 15px is the smallest correction that seats every one of them. */
+.diagram svg .noteText, .diagram svg .noteText tspan { font-size: 15px; }
 
 /* ------------------------------------------------------------------ responsive */
 @media (max-width: 62rem) {
@@ -756,10 +771,16 @@ def masthead(chapters, stats):
 # readable diagram source, which is a usable degradation rather than a blank.
 MERMAID_LOADER = """
 (function () {
-  function init() {
-    if (window.mermaid) {
-      window.mermaid.initialize({ startOnLoad: true, securityLevel: 'loose', theme: 'neutral' });
+  function pinNaturalWidth() {
+    var svgs = document.querySelectorAll('.diagram svg');
+    for (var i = 0; i < svgs.length; i++) {
+      if (svgs[i].style.maxWidth) { svgs[i].style.width = svgs[i].style.maxWidth; }
     }
+  }
+  function init() {
+    if (!window.mermaid) { return; }
+    window.mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'neutral' });
+    window.mermaid.run({ querySelector: 'pre.mermaid' }).then(pinNaturalWidth, pinNaturalWidth);
   }
   function load(src, onerror) {
     var s = document.createElement('script');
@@ -866,9 +887,16 @@ def prerender_mermaid(page, mermaid_js, chromium=None):
                      "{startOnLoad:false, securityLevel:'loose', theme:'neutral'})")
         for i, m in enumerate(blocks):
             source = html.unescape(m.group(1))
-            svgs.append(tab.evaluate(
+            svg = tab.evaluate(
                 "async (a) => (await window.mermaid.render(a[0], a[1])).svg",
-                ['prerendered-{}'.format(i), source]))
+                ['prerendered-{}'.format(i), source])
+            # Mermaid emits width="100%", which shrinks a diagram wider than the
+            # reading measure until its labels are unreadable. Pin the natural
+            # width instead and let the container scroll.
+            natural = re.search(r'max-width:\s*([\d.]+)px', svg)
+            if natural:
+                svg = svg.replace('width="100%"', 'width="{}"'.format(natural.group(1)), 1)
+            svgs.append(svg)
         browser.close()
 
     out, last = [], 0
