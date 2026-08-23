@@ -63,6 +63,11 @@ where `<INPUT_STREAM_PATH>` is the path to the bitstream, `<OUTPUT_PNG_IMAGE_PAT
 
 ## Documentation
 
+Detailed architecture documentation — repository layout, the engine/tool framework, the encoding
+and decoding pipelines, the bitstream format, entropy coding, the neural networks, a per-tool
+reference and the command-line tools, all with diagrams — is in
+[docs/architecture](docs/architecture/README.md).
+
 You may find slides with SW design [here](docs/ppt/VM.pptx).
 
 
