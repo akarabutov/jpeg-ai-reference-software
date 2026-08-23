@@ -40,7 +40,7 @@ SOC and EOC carry only their marker; they have no size field and no payload.
 
 ## 2. Marker table
 
-Defined in `layouts_def.py::SubstreamLayouts`:
+Defined by `SubstreamLayouts` in `layouts_def.py`:
 
 | Marker | Value | Name | Entropy coded | Threads | Mandatory | Has regions |
 | --- | --- | --- | --- | --- | --- | --- |

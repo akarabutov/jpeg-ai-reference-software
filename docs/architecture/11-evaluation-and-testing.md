@@ -11,8 +11,8 @@ A reference implementation has two obligations, and this repository tests both:
 
 ```mermaid
 flowchart TB
-    ENC["encoder"] -->|"MD5: (Y, U, V)"| L1["log/enc/&lt;img&gt;_&lt;bpp&gt;.txt"]
-    DEC["decoder"] -->|"MD5: (Y, U, V)"| L2["log/dec/&lt;img&gt;_&lt;bpp&gt;.txt"]
+    ENC["encoder"] -->|"MD5: (Y, U, V)"| L1["log/enc/{img}_{bpp}.txt"]
+    DEC["decoder"] -->|"MD5: (Y, U, V)"| L2["log/dec/{img}_{bpp}.txt"]
     L1 --> CMP["compare_md5s.py"]
     L2 --> CMP
     CMP --> R{"identical?"}
@@ -29,7 +29,7 @@ flowchart TB
 
 ## 2. The evaluation harness
 
-`src/codec/scripts/eval.py::CodecEval` is the engine; `src/reco/scripts/eval.py` supplies the
+`CodecEval` in `src/codec/scripts/eval.py` is the engine; `src/reco/scripts/eval.py` supplies the
 reconstruction-task specifics (which encoder, which decoder, which comparator).
 
 ```mermaid
@@ -43,7 +43,7 @@ sequenceDiagram
     Eval->>Eval: create_output_dirs()
     Eval->>Eval: build the resolved config → cfg.json
     Eval->>Eval: enumerate images × target_bpps
-    Note over Eval: append cfg/per-image/&lt;img&gt;.json and<br/>cfg/per-image-per-bpp/&lt;img&gt;/bpp&lt;N&gt;.json if present
+    Note over Eval: apply the per-image override and the<br/>per-image-per-bpp override, when either exists
 
     Eval->>Pool: compute_with_threads(gpu_list, configs)
     loop per (image, rate) job
@@ -196,7 +196,8 @@ flowchart LR
 ```
 
 Git holds only `.dvc` pointer files; the binaries come from the remote configured in
-`.dvc/config`. `src/codec/utils/downloader.py::Downloader` runs `dvc fetch` and `dvc checkout -f`
+`.dvc/config`. The `Downloader` in `src/codec/utils/downloader.py` runs `dvc fetch` and
+`dvc checkout -f`
 on a model's pointers when it is first needed, so DVC re-verifies content hashes and a partial or
 stale pull is repaired rather than silently producing wrong output.
 `critical_for_file_absence` (inverted by `--skip_loading_error`) decides whether a missing file is

@@ -26,6 +26,17 @@ post-filters) is built around those networks.
 | [10 — Command-line tools](10-command-line-tools.md) | Every executable entry point and shell/Python utility |
 | [11 — Evaluation and testing](11-evaluation-and-testing.md) | The evaluation harness, metrics, CI, DVC, model management |
 
+## Reading this as HTML
+
+```bash
+make docs           # Doxygen site: these pages next to the API reference -> docs/html/index.html
+make docs_single    # one self-contained page                             -> docs/architecture.html
+```
+
+Both are generated from the Markdown in this directory, which stays the single point of truth.
+[docs/doxygen/README.md](../doxygen/README.md) explains the build and the two Mermaid pitfalls to
+avoid when editing these files.
+
 ## The system in one picture
 
 ```mermaid

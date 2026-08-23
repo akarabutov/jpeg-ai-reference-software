@@ -253,10 +253,10 @@ single NCHW tensor, because chroma may be subsampled.
 | Aspect | Detail |
 | --- | --- |
 | Components | Accessed by name: `get_component('Y')`, `set_component(...)`, `get_components()` |
-| Formats | `sRGB`, `444`, `422`, `420`; conversions `to_420_`, `to_422_`, `to_444_`, `to_format_` |
+| Formats | `sRGB`, `444`, `422`, `420`; conversions `to_420_()`, `to_422_()`, `to_444_()`, `to_format_()` |
 | Colour spaces | `to_YUV_(type='709')`, `to_RGB_(type='709')` |
 | Bit depth | Tracked on the object; `write_file(path, bit_depth=…)` re-quantises on output |
-| Geometry | `pad_`, `pad2depth_` (pad to a multiple of the network alignment), `scale_size` |
+| Geometry | `pad_()`, `pad2depth_()` (pad to a multiple of the network alignment), `scale_size()` |
 | Subsampling | `get_chroma_subsampling()` returns `(s_ver, s_hor)` — signalled in the picture header |
 | IO | `Image.read_file()` / `write_file()` handle PNG (via OpenCV) and raw YUV; `extract_info()` parses `WxH_Nbit_FMT` out of a filename |
 

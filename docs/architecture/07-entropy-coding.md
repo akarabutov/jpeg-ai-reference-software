@@ -22,7 +22,7 @@ flowchart TB
     PW --> CPP1["C++ ext: mans<br/>ANSEncoder / ANSDecoder"]
     DIR --> CPP2["C++ ext: direct<br/>EcLibDirect"]
 
-    ALT["<b>ECLibLH</b><br/>likelihood only, no bitstream"] -.selected via cfg/AE/lh.json.-> PW
+    ALT["<b>ECLibLH</b><br/>likelihood only, no bitstream"] -.->|"selected via cfg/AE/lh.json"| PW
 ```
 
 Four layers, each with one job:
@@ -207,7 +207,8 @@ structure needs these steps:
 1. Add a wrapper under `lib_wrappers/<name>/` deriving from `ECLibBase` or `ECLibBaseWithThread`.
 2. Provide probability wrappers (`base_prob_wrapper.py`, `bypass_prob_wrapper.py`,
    `sgt_prob_wrapper.py`, `custom_prob_wrapper.py`) mapping models to your back-end.
-3. Register it in `composite/factory.py::ECInstanceFactory.modules` under a new name.
+3. Register it under a new name in the `modules` dict of `ECInstanceFactory`
+   (`composite/factory.py`).
 4. Add a `cfg/AE/<name>.json` selecting it.
 
 **A new probability model**

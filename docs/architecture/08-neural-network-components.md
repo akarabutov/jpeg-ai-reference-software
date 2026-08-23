@@ -140,7 +140,7 @@ PixelShuffle(4)
 crop → abs → clamp(0, sigma_idx_max_value)
 ```
 
-The `i` suffix marks **integer** convolutions (`conv_quant_layers.py::Conv2di`). The scale
+The `i` suffix marks **integer** convolutions (`Conv2di` in `conv_quant_layers.py`). The scale
 decoder is the one network that must be bit-exact across implementations, because its output is
 a σ *index* that selects the entropy coding distribution — a one-index disagreement desynchronises
 the entropy decoder. Hence the integer path, the `models/VM_common_int/` checkpoints, and the

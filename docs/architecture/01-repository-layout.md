@@ -135,7 +135,8 @@ Betas present in the released models are `0.002`, `0.012`, `0.075` and `0.5` —
 "quality models" (`Ntools: 4` in `cfg/pipeline.json`).
 
 Every `.pth` has a companion `.pth.dvc` pointer. `make download_models` runs `dvc pull`, and
-`src/codec/utils/downloader.py::Downloader` shells out to `dvc fetch` and `dvc checkout -f` at
+The `Downloader` class in `src/codec/utils/downloader.py` shells out to `dvc fetch` and
+`dvc checkout -f` at
 load time, so DVC verifies the hashes.
 
 ## `data/`

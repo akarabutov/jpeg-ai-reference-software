@@ -9,8 +9,8 @@ files compose and in what order values win.
 ```mermaid
 flowchart LR
     A["cfg/info.json<br/>names the defaults"] --> B["config files, left to right<br/>--cfg A.json B.json C.json"]
-    B --> C["per-image override<br/>cfg/per-image/&lt;img&gt;.json"]
-    C --> D["per-image-per-rate override<br/>cfg/per-image-per-bpp/&lt;img&gt;/bpp&lt;N&gt;.json"]
+    B --> C["per-image override<br/>cfg/per-image/{img}.json"]
+    C --> D["per-image-per-rate override<br/>cfg/per-image-per-bpp/{img}/bpp{N}.json"]
     D --> E["command line<br/>-a.b.c value"]
     E --> F["final resolved tree"]
 ```
@@ -236,7 +236,7 @@ flowchart TB
         RG["regen_list.json<br/>search beta to hit target ±10%"]
         US["use_list.json<br/>read beta from a pre-computed list"]
     end
-    US --> B["cfg/betas/&lt;op&gt;/betas_tools_{on,off}.txt"]
+    US --> B["cfg/betas/{op}/betas_tools_on|off.txt"]
 ```
 
 `cfg/BRM/default.json` also carries the model-selection defaults:
