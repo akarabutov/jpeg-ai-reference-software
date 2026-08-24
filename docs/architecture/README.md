@@ -26,7 +26,7 @@ post-filters) is built around those networks.
 | [10 — Command-line tools](10-command-line-tools.md) | Every executable entry point and shell/Python utility |
 | [11 — Evaluation and testing](11-evaluation-and-testing.md) | The evaluation harness, metrics, CI, DVC, model management |
 | [12 — Parameter resolution](12-parameter-resolution.md) | How the command line and the config files reach the tool tree |
-| [13 — Training](13-training.md) | The five-stage schedule and every training option, and what is missing |
+| [13 — Training](13-training.md) | The launcher, the five-stage schedule, the training loop and every option |
 
 ## Reading this as HTML
 
