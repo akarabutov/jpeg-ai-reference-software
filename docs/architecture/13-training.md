@@ -43,10 +43,10 @@ flowchart TB
 
 Concretely, for the shipped configuration one `make train` becomes:
 
-* **1** launcher process,
-* **4** worker processes (one per beta: 0.002, 0.012, 0.075, 0.5),
-* **5** sequential stages inside each worker,
-* **2** DDP trainer processes per stage (`beta_2_gpus` gives each beta two GPUs),
+- **1** launcher process,
+- **4** worker processes (one per beta: 0.002, 0.012, 0.075, 0.5),
+- **5** sequential stages inside each worker,
+- **2** DDP trainer processes per stage (`beta_2_gpus` gives each beta two GPUs),
 
 so the shipped `cfg/train.json` assumes **8 GPUs**.
 
@@ -145,7 +145,7 @@ plus `--frozen_part` when non-empty and `--overfit` when set.
 
 Three consequences worth knowing:
 
-* **Options not in that list never reach the trainer from the command line.** `--crop_size`,
+- **Options not in that list never reach the trainer from the command line.** `--crop_size`,
   `--workers`, `--epochs`, `--lr`, `--wd`, `--color`, `--bh`, `--N_G`, `--entropy`,
   `--print_freq`, `--save_epoch`, `--best_n`, `--patience`, `--factor`, `--lr_steps`,
   `--lr_type`, `--scale_bound`, `--start_epoch`, `--crop_number`, `--sym_flag`,
@@ -158,24 +158,25 @@ Three consequences worth knowing:
   and `--collect_only` all arrive that way. (`--base_warmup_epoch`, `--lr` and
   `--anneal_final_lr` are the exception: the template reads the launcher's values through
   `args.…` and substitutes them when they are not `None`.)
-* **`--frozen_part` on the launcher command line kills the run silently.** The forwarding
-  line is
-
-  ```python
-  if len(args.frozen_part) > 0:
-      common_parameters += "--frozen_part" + args.frozen_part
-  ```
-
-  `args.frozen_part` is a list (`nargs="+"`), so `str + list` raises
-  `TypeError: can only concatenate str (not "list") to str` inside
-  `run_stages_for_one_beta()` — before a single training process is launched. That function
-  runs in a `multiprocessing.Pool` worker, and `main()` never calls `results.get()`: it polls
-  `results.ready()`, then `close()` and `join()`. `map_async` stores the exception and
-  nothing ever retrieves it, so the launcher exits 0 with an empty output directory and no
-  error message. Set freezing per stage in `cfg/train_stages.json` instead, where every stage
-  already does.
-* **`--cube_flag_thre` is overridden for the top rate:** the launcher passes
+- **`--cube_flag_thre` is overridden for the top rate:** the launcher passes
   `args.cube_flag_thre if beta < 0.5 else 0.0`.
+- **`--frozen_part` must never be passed to the launcher.** It ends the run silently — see
+  immediately below. Set freezing per stage in `cfg/train_stages.json` instead, where every
+  stage already does.
+
+The `--frozen_part` forwarding line is
+
+```python
+if len(args.frozen_part) > 0:
+    common_parameters += "--frozen_part" + args.frozen_part
+```
+
+`args.frozen_part` is a list (`nargs="+"`), so `str + list` raises
+`TypeError: can only concatenate str (not "list") to str` inside
+`run_stages_for_one_beta()` — before a single training process is launched. That function runs
+in a `multiprocessing.Pool` worker, and `main()` never calls `results.get()`: it polls
+`results.ready()`, then `close()` and `join()`. `map_async` stores the exception and nothing
+ever retrieves it, so the launcher exits 0 with an empty output directory and no error message.
 
 ### 3.3 Crash handling
 
@@ -183,11 +184,11 @@ The launcher does not trust the child's exit code. It scans the last five lines 
 stdout log for the literal string `end of train`, printed by
 `multistages_train/train.py` after `train()` returns. Anything else counts as a crash:
 
-* with `--automatic_resume_on_crash 1` (the default) it lists the stage output directory,
+- with `--automatic_resume_on_crash 1` (the default) it lists the stage output directory,
   finds the highest-numbered `<epoch>.pth`, and relaunches with
   `--resume <that file> --resume_opt 1` — so the optimizer state, the epoch counter and the
   best-loss watermark all survive;
-* with `--automatic_resume_on_crash 0` it raises `subprocess.CalledProcessError`.
+- with `--automatic_resume_on_crash 0` it raises `subprocess.CalledProcessError`.
 
 Each stage gets a fresh free TCP port (`find_free_port()`) for the DDP rendezvous, so
 concurrent betas do not collide.
@@ -358,7 +359,7 @@ flowchart LR
 
 Total: 132 training epochs per beta, plus a two-pass statistics sweep.
 
-| | I `MSE_FixedRate_64` | II `Mixed_FixedRate_36` | III `Mixed_FixedRate_OnlyDec_20` | IV `MSE_VariableRate_12` | V `Data_Collection` |
+| Setting | I `MSE_FixedRate_64` | II `Mixed_FixedRate_36` | III `Mixed_FixedRate_OnlyDec_20` | IV `MSE_VariableRate_12` | V `Data_Collection` |
 | --- | --- | --- | --- | --- | --- |
 | `--epochs` | 64 | 36 | 20 | 12 | 1 |
 | `--loss_type` | `mse` | `mix` | `mix` | `mix` | `mix` |
@@ -442,19 +443,19 @@ flowchart LR
     VSAMP --> VDL["DataLoader<br/>batch_size=1, workers=1"]
 ```
 
-* `CodecDataset` reads the list file, keeps the first whitespace-separated field of each line,
+- `CodecDataset` reads the list file, keeps the first whitespace-separated field of each line,
   opens with PIL and `.convert('RGB')`.
-* `CustomResize([1024, 512])` scales the **short** side down to the first threshold it exceeds
+- `CustomResize([1024, 512])` scales the **short** side down to the first threshold it exceeds
   — short side > 1024 → 1024; else short side > 512 → 512; else 512. It never upscales
   (`custom_resize` returns the image unchanged if it already matches).
-* `CustomCrop(size, num)` takes `--crop_number` random `--crop_size` × `--crop_size` crops and
+- `CustomCrop(size, num)` takes `--crop_number` random `--crop_size` × `--crop_size` crops and
   returns them as a list; the `Lambda` stacks them, so the effective batch is
   `batch_size × crop_number` images.
-* `CustomToTensor` produces a float tensor in **[0, 255]**, not [0, 1] — the codec works in
+- `CustomToTensor` produces a float tensor in **[0, 255]**, not [0, 1] — the codec works in
   sample units throughout.
-* Validation asserts `len(val_dataset) % world_size == 0`. A validation list whose length is
+- Validation asserts `len(val_dataset) % world_size == 0`. A validation list whose length is
   not a multiple of the GPU count aborts the run.
-* `--overfit` replaces the whole training transform with `CustomToTensor` — full images, no
+- `--overfit` replaces the whole training transform with `CustomToTensor` — full images, no
   crop, no flip. Combined with `--rec_dir` it writes a reconstruction per validation step, so
   you can watch a single image converge.
 
@@ -532,13 +533,13 @@ divided by `batch · H · W`, i.e. bits per **input** pixel.
 
 The distortion term `D` depends on `--loss_type`:
 
-* **`mse`** — `D = w_y·MSE_Y + w_u·MSE_Cb + w_v·MSE_Cr` where the component weights are
+- **`mse`** — `D = w_y·MSE_Y + w_u·MSE_Cb + w_v·MSE_Cr` where the component weights are
   `(0.8, 0.1, 0.1)` when `beta < 0.5` and `(0.33, 0.33, 0.33)` otherwise. (The source comment
   on that branch says "if is the highest beta", which reads backwards — the equal weighting is
   what the top rate gets.)
-* **`msssim`** — the same weighting over `1 − MS-SSIM`, scaled by `beta · 1000` instead of
+- **`msssim`** — the same weighting over `1 − MS-SSIM`, scaled by `beta · 1000` instead of
   `mse_weight · beta`.
-* **`mix`** — the one the schedule actually uses from stage II on. With
+- **`mix`** — the one the schedule actually uses from stage II on. With
   `a = --msssim_weight` and `(fY, fCb, fCr) = --loss_factors`:
 
   | Model | Luma term | Chroma terms |
@@ -570,9 +571,9 @@ straight-through variants appear:
 The hyper-latent always uses `addZNoise()`. The residual uses `addResiNoise()` for the
 likelihood computation, and:
 
-* **`--enable_gvae 0`** — the reconstruction is built from `y_hat` produced by the context
+- **`--enable_gvae 0`** — the reconstruction is built from `y_hat` produced by the context
   model, and the luma residual keeps its noisy value.
-* **`--enable_gvae 1`** — the luma residual is hard-rounded (`(round(res) − res).detach() + res`)
+- **`--enable_gvae 1`** — the luma residual is hard-rounded (`(round(res) − res).detach() + res`)
   and the reconstruction is built from `dequantize(res) + mean` for both components. This is
   the "generalised VAE" path enabled from stage III on for every model except beta 0.002.
 
@@ -865,9 +866,9 @@ Every option `get_args()` defines. "Launcher" means the launcher forwards it to 
 `scripts/download_train_ds.sh` prompts for the JPEG AI sFTP password (the WG1 document that
 carries it is linked in the script), pulls from `amalia.img.lx.it.pt` as user `jpeg-ai`:
 
-* `train_and_valid_natural/cropped/*.zip` — four archives covering images 00000–5263,
-* `train_and_valid_scc700/scc7000_patchs2.tar` — the screen-content patches,
-* the validation set archive,
+- `train_and_valid_natural/cropped/*.zip` — four archives covering images 00000–5263,
+- `train_and_valid_scc700/scc7000_patchs2.tar` — the screen-content patches,
+- the validation set archive,
 
 unzips them flat into `data/jpegai_training_random_crop/` and
 `data/jpegai_validation_set/`, and generates
@@ -926,11 +927,11 @@ The YAML options are read by `codes/options/options.py` and consumed by
 
 **Three pieces are missing from this release**, so the ICCI trainer cannot be run as shipped:
 
-* `codes/data/` — `train.py` starts with `from data.data_sampler import DistIterSampler` and
+- `codes/data/` — `train.py` starts with `from data.data_sampler import DistIterSampler` and
   `from data import create_dataloader, create_dataset`; the package is absent.
-* `codes/options/train/*.yml` — the Readme says "All needed yml files are provided"; the
+- `codes/options/train/*.yml` — the Readme says "All needed yml files are provided"; the
   `options/train/` directory does not exist.
-* `codes/train_eicci.sh` — the launcher the Readme's 20 example commands use.
+- `codes/train_eicci.sh` — the launcher the Readme's 20 example commands use.
 
 The `dataset/`, `experiments/` and `tb_logger/` trees are present but empty.
 
@@ -968,23 +969,23 @@ python -m src.reco.scripts.eval \
 
 ## 16. Reproducing a run — practical notes
 
-* **8 GPUs, or edit `beta_2_gpus`.** The shipped configuration assumes four betas × two cards.
-* **NVIDIA Apex is not vendored.** `scripts/build_train_libs.sh` ends with
+- **8 GPUs, or edit `beta_2_gpus`.** The shipped configuration assumes four betas × two cards.
+- **NVIDIA Apex is not vendored.** `scripts/build_train_libs.sh` ends with
   `cd src/train/3rdparty/apex && pip install …`, and `src/train/3rdparty/` does not ship.
   Install Apex separately, or run with `--amp 0` — the loop's AMP path is guarded throughout.
-* **The default run does not test.** `--use_automatic_testing` defaults to `False` and
+- **The default run does not test.** `--use_automatic_testing` defaults to `False` and
   `scripts/train.sh` does not set it. Add `--use_automatic_testing 1 --generate_test_summary 1`
   to get the BD-rate tracking described in section 11.
-* **Validation set size must divide the GPU count**, or the `assert` in `get_data_loader()`
+- **Validation set size must divide the GPU count**, or the `assert` in `get_data_loader()`
   fires before the first epoch.
-* **Runs are not bit-exact.** `cudnn.deterministic` is explicitly `False`, and the per-batch
+- **Runs are not bit-exact.** `cudnn.deterministic` is explicitly `False`, and the per-batch
   beta is drawn from `np.random` after a per-epoch reseed.
-* **A stage silently stops at 100 epochs** (`exit()`), regardless of `--epochs`. The shipped
+- **A stage silently stops at 100 epochs** (`exit()`), regardless of `--epochs`. The shipped
   stages are all shorter, so this only bites custom schedules.
-* **Never pass `--frozen_part` to the launcher.** It raises a `TypeError` that the process
+- **Never pass `--frozen_part` to the launcher.** It raises a `TypeError` that the process
   pool swallows: the run ends with exit code 0 and an empty output directory. Use the stage
   file (section 3.2).
-* **`scripts/acc_train_scripts/test.py`** is a runnable end-to-end smoke test: it generates two
+- **`scripts/acc_train_scripts/test.py`** is a runnable end-to-end smoke test: it generates two
   random PNGs, rewrites both configuration files to one beta and one epoch per stage,
   DVC-pulls `models/VM_common/train_stages/MSE_VariableRate_12/*/best.pth`, and asserts that
   every stage produced `val_results.json` and that no metric came back `None`. It is the

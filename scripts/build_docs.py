@@ -221,7 +221,7 @@ class MarkdownRenderer:
                 i = self._table(lines, i)
                 continue
 
-            if re.match(r'^(-|\d+\.) ', line):
+            if re.match(r'^([-*]|\d+\.) ', line):
                 i = self._list(lines, i)
                 continue
 
@@ -297,7 +297,7 @@ class MarkdownRenderer:
 
     def _list(self, lines, i):
         ordered = bool(re.match(r'^\d+\. ', lines[i]))
-        pattern = r'^\d+\.\s+' if ordered else r'^-\s+'
+        pattern = r'^\d+\.\s+' if ordered else r'^[-*]\s+'
         items = []
 
         while i < len(lines) and re.match(pattern, lines[i]):
@@ -667,6 +667,12 @@ th {
 }
 tbody tr:last-child td { border-bottom: 0; }
 td code { font-size: .82em; }
+/* Inline code wraps mid-token in prose so a long path cannot overrun the
+   measure.  In a table that turns a narrow column into a vertical column of
+   single characters, so keep tokens whole here -- .tablewrap already scrolls. */
+th code, td code { word-break: normal; overflow-wrap: normal; }
+/* The first column is the row label -- keep it on one line. */
+td:first-child code { white-space: nowrap; }
 
 /* ------------------------------------------------------------------- diagrams */
 .diagram {
