@@ -114,12 +114,12 @@ The expansion is **depth first, post-order**: a file's includes are loaded befor
 itself, so a file always overrides what it includes. Running it on the real configuration gives:
 
 ```
---cfg cfg/tools_on.json cfg/profiles/main.json
+--cfg cfg/tools_on.json cfg/profiles/base.json
 
  1  cfg/AE/ans.json              8  cfg/tools/EFElinear.json      15  cfg/oper_point/bop_Enc.json
  2  cfg/AE/default.json          9  cfg/tools/EFEnonlinear.json   16  cfg/oper_point/bop_Dec.json
  3  cfg/BRM/default.json        10  cfg/tools/LEF.json            17  cfg/oper_point/bop.json
- 4  cfg/pipeline.json           11  cfg/tools/eICCI.json          18  cfg/profiles/main.json
+ 4  cfg/pipeline.json           11  cfg/tools/eICCI.json          18  cfg/profiles/base.json
  5  cfg/CTC.json                12  cfg/tools/EnhancementFilters.json
  6  cfg/tools/LSBS.json         13  cfg/tools_on.json
  7  cfg/tools/ResVarScale.json  14  cfg/oper_point/common.json
@@ -439,7 +439,7 @@ root's own parameters are top-level keys.
 
 ```bash
 python -m src.reco.coders.encoder in.png out.bits \
-    --cfg cfg/tools_off.json cfg/profiles/main.json \
+    --cfg cfg/tools_off.json cfg/profiles/base.json \
     -model.CCS_SGMM.tools_common.model_common.common_modules.quantizer.rvs.rvs_enabled 1
 ```
 

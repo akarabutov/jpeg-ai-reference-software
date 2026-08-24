@@ -83,10 +83,11 @@ sequenceDiagram
 `check_complience()` is the conformance gate. It verifies, against `cfg/profiles/`:
 
 1. `decoder_profile_id` names a profile that exists;
-2. the default synthesis transform is one the profile supports;
-3. `level_idc` decomposes into a known `level_idc0` / `level_idc1` pair;
-4. `img_height × img_width ≤ max_pic_size` for that level;
-5. the active beta model index is permitted at that level.
+2. `stream_profile_id` matches the value in that profile's configuration file;
+3. the default synthesis transform is one the profile supports;
+4. `level_idc` decomposes into a known `level_idc0` / `level_idc1` pair;
+5. `img_height × img_width ≤ max_pic_size` for that level;
+6. the active beta model index is permitted at that level.
 
 Any failure is an assertion — a non-conforming stream stops the decoder rather than producing a
 picture.

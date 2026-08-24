@@ -5,7 +5,7 @@
 ```bash
 python -m src.reco.coders.encoder <IMAGE.png> <OUTPUT.bits> \
        [-r <REC.png>] [--set_target_bpp <BPP×100>] \
-       --cfg cfg/tools_on.json cfg/profiles/main.json
+       --cfg cfg/tools_on.json cfg/profiles/base.json
 ```
 
 ## 2. Two phases, one engine
@@ -221,7 +221,7 @@ operating point that lands closest to the requested bpp. Three modes, selected b
 | --- | --- |
 | `default.json` | Look up `default_models` and `default_beta_disp_log` by rate-point index. No search — fast, deterministic |
 | `use_list.json` | Read the per-image, per-rate beta from `cfg/betas/<op>/betas_tools_{on,off}.txt` |
-| `regen_list.json` | Actually search: `match_luma()` runs the codec at trial betas, `beta_linear_interpolation()` interpolates towards the target bits, and `find_UV_beta_with_hyperopt()` optimises the chroma beta separately (when `independent_beta_UV: 1`) using `hyperopt`. Distortion is a weighted MS-SSIM (`_calculate_mssim_distortion`) |
+| `regen_list.json` | Actually search: `match_luma()` runs the codec at trial betas and `beta_linear_interpolation()` interpolates towards the target bits. The chroma beta is then copied from luma when `independent_beta_UV` is `1`, or searched with `find_UV_beta_with_hyperopt()` when it is `0`. Distortion is a weighted MS-SSIM (`_calculate_mssim_distortion`) |
 
 The search is what `--set_target_bpp` triggers, and it is the expensive path — it re-runs
 compression several times per image. Regular test runs use the pre-computed lists instead.

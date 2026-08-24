@@ -129,7 +129,8 @@ Written by `CodingEngine.encode_header()` and then by every tool in tree order. 
 
 | Field | Coding | Meaning |
 | --- | --- | --- |
-| `decoder_profile_id` | 4 bits | 0 simple, 1 main, 2 high |
+| `stream_profile_idc` | 4 bits | Stream profile. Only `0` is defined so far |
+| `decoder_profile_id` | 4 bits | 0 simple, 1 base, 2 high |
 | `num_synthesis_transforms_minus1` | 4 bits | Length of the transform list |
 | `synthesis_transform_id[i]` | 4 bits each | Which synthesis networks the stream may use; `[0]` is the default |
 | `level_idc` | 8 bits | Two decimal digits: picture-size level and model-set level |
@@ -158,8 +159,8 @@ After these, `encode_header_recursively` continues through the tree. Each `Coder
 | `log2_num_threads_z_minus1` | 2 bits, conditional | 2, 4, 8 or 16 threads |
 | *(quantizer proxy headers, pass 1)* | — | Per-component quantiser flags |
 | `region_partitioning_flag` | 1 bit | Regions in use |
-| `num_ver_splits_minus1` | 7 bits, conditional | Up to 128 vertical regions |
-| `num_hor_splits_minus1` | 7 bits, conditional | Up to 128 horizontal regions |
+| `num_ver_splits_minus1` | 7 bits, conditional | Up to 128 vertical regions, and no more than `ceil(img_height / 256)` — the decoder asserts it |
+| `num_hor_splits_minus1` | 7 bits, conditional | Up to 128 horizontal regions, and no more than `ceil(img_width / 512)` — the decoder asserts it |
 | `region_residual_in_its_own_substream_flag` | 1 bit, conditional | Independent (1) vs dependent (0) |
 | `hyper_decoder_overlap_in_latent_samples` | 2 bits, conditional | ×2 → `HyperDecoderOverlap` |
 | `mcm_overlap_in_latent_samples` | 4 bits, conditional | ×4 → `McmOverlap` |

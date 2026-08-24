@@ -84,9 +84,12 @@ filename.
 | PSNR | `PSNRMetric` | Per component; `--jvet-psnr` switches to the JVET convention |
 | MS-SSIM | `MSSSIMTorch` | Via `pytorch-msssim` |
 
-`requirements.txt` also pins `psnr_hvsm`, `pyrtools` and `scikit-image`, the dependencies of the
-wider JPEG AI metric set; `MetricsFabric.metrics_list` is the switchboard that decides which are
-actually computed.
+`requirements.txt` pins `pyrtools` and `scikit-image`, dependencies of the wider JPEG AI metric
+set, and adds `bjontegaard` for BD-rate — used by
+`scripts/acc_train_scripts/report_bdrate_results.py`. `psnr_hvsm` and `hyperopt` are present but
+commented out, so the code paths that import them need a manual install.
+`MetricsFabric.metrics_list` is the switchboard that decides which metrics are actually
+computed.
 
 Supporting machinery:
 

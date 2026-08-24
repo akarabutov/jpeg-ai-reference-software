@@ -203,7 +203,7 @@ as a **pre-processing** RDO tool on the core model composite.
 | `default_beta_disp_log` | Beta displacement per rate point — `[0, 0, -184, 0, 0]` |
 | `default_target_rates` | The rate points themselves |
 | `bitrate_config_path` / `bitrate_config_name` | Where to read a pre-computed beta list |
-| `independent_beta_UV` | Search the chroma beta separately |
+| `independent_beta_UV` | At `1`, copy the luma beta to chroma; at `0`, search chroma separately. The name reads backwards |
 | `tolerance_min` / `tolerance_max` | Acceptable deviation from the target rate |
 | `beta_min_mult` / `beta_max_mult` | Search bracket around the initial guess |
 | `max_iterations`, `max_iterations_stage1`, `max_iterations_stage2` | Search budget |
@@ -213,7 +213,9 @@ Search algorithm (`regen_list.json` mode):
 1. `match_luma()` brackets the luma beta and calls `_try_beta()` — a full compress at a candidate
    beta, measuring actual bits.
 2. `beta_linear_interpolation()` interpolates between bracket endpoints toward the target.
-3. `find_UV_beta_with_hyperopt()` optimises the chroma beta with `hyperopt`, using
+3. When `independent_beta_UV` is `0`, `find_UV_beta_with_hyperopt()` optimises the chroma beta
+   with `hyperopt` — which is commented out of `requirements.txt`, so this path needs a manual
+   install — using
    `find_loss()` → `_calculate_mssim_distortion()` (weighted MS-SSIM) as the objective.
 4. `skip_matching()` short-circuits when the default already lands in tolerance.
 
@@ -455,6 +457,7 @@ Region configuration (from `cfg/tools/{Independent,Dependent}Regions.json`):
 | --- | --- | --- |
 | `region_partitioning_flag` | 1 | 1 |
 | `NumSamplesInRegion` | 1 048 576 | 1 048 576 |
+| region count cap | `ceil(H/256)` × `ceil(W/512)` | same |
 | `region_residual_in_its_own_substream_flag` | **1** | **0** |
 | `hyper_decoder_overlap_in_latent_samples` | 2 | 2 |
 | `mcm_overlap_in_latent_samples` | 8 | 8 |

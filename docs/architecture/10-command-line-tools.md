@@ -51,11 +51,13 @@ flowchart TB
 | `make setup_env` | `scripts/setup_env.sh` | Create conda env `jpeg_ai_vm` (Python 3.7), `pip install -r requirements.txt`, `pre-commit install`, build C++ libs |
 | `make configure` | both of the above | One-shot machine setup |
 | `make build_test_libs` | `scripts/build_test_libs.sh` → `build_ec_lib.sh` | Build the `mans` and `direct` entropy-coding extensions |
+| `make build_libs` | `build_test_libs` | Alias kept for the training documentation; today it builds exactly the same libraries |
 | `make download_test_ds` | `scripts/download_test_ds.sh` | `dvc pull data/test/*.dvc` |
 | `make download_models` | `scripts/download_models.sh` | `dvc pull models/*/*.dvc` |
 | `make download_train_ds` | `scripts/download_train_ds.sh` | Pull the training set |
 | `make download_dvc_cache` | `scripts/sFTP_mirror/download_cache.sh` | Mirror the DVC cache from the upstream sFTP |
 | `make test` | `python -m src.reco.scripts.eval --coding_type enc_dec --out_dir results/test` | The standard encode+decode+compare run over the test set |
+| `make train` | `scripts/train.sh` | Launch a training run — see [13 — Training](13-training.md) |
 | `make unittest` | `CUDA_VISIBLE_DEVICES="-1" python -m unittest -v` | Unit tests, CPU only |
 | `make base_cfgs` | `run_eval_script.py` × 2 + `merge_op_results.py` | Full tools-on/tools-off sweep, results merged into an Excel workbook |
 | `make base_cfgs_img30` | same, on image 30 only | The quick version used in CI |
@@ -65,6 +67,8 @@ flowchart TB
 | `make export_models` | `scripts/export_models.sh` | ONNX + CSV export, reorganised into the standard's layout |
 | `make build_docker` / `make run_docker` | `docker build/run` | Image `diveraak/jpeg_ai:latest` |
 | `make all` | configure → build → download → test | Everything from scratch |
+| `make docs` | `scripts/build_docs.py doxygen` + `doxygen` | Build the HTML site (API reference plus these pages) into `docs/html` |
+| `make docs_single` | `scripts/build_docs.py single` | Build one self-contained page `docs/architecture.html` |
 
 ## 3. The codec
 
@@ -94,10 +98,10 @@ Standard invocations:
 
 ```bash
 # anchor — all tools off
---cfg cfg/tools_off.json cfg/profiles/main.json
+--cfg cfg/tools_off.json cfg/profiles/base.json
 
 # all tools on
---cfg cfg/tools_on.json cfg/profiles/main.json
+--cfg cfg/tools_on.json cfg/profiles/base.json
 
 # selected tools only
 --cfg cfg/tools_off.json cfg/tools/LSBS.json cfg/tools/RDLR.json cfg/profiles/high.json

@@ -35,7 +35,7 @@ contribute, and how `tools_common` / `model_common` actually work.
 
 ```json
 {
-    "version": "DIS",
+    "version": "IS",
     "codec_name": "JAI",
     "config": ["tools_on.json", "profiles/high.json"],
     "pipeline": "pipeline.json"
@@ -153,7 +153,7 @@ Each file is a minimal patch that turns exactly one tool on. Because they are pa
 compose: to test LSBS and RDLR together but nothing else, pass
 
 ```
---cfg cfg/tools_off.json cfg/tools/LSBS.json cfg/tools/RDLR.json cfg/profiles/main.json
+--cfg cfg/tools_off.json cfg/tools/LSBS.json cfg/tools/RDLR.json cfg/profiles/base.json
 ```
 
 | File | Turns on |
@@ -183,17 +183,21 @@ These three concepts are often confused. They are distinct:
 
 | Concept | Where | What it constrains |
 | --- | --- | --- |
-| **Profile** | `cfg/profiles/{simple,main,high}.json` | Which *synthesis transforms* a conforming decoder must implement. Signalled as `decoder_profile_id` |
+| **Profile** | `cfg/profiles/{simple,base,high}.json` | Which *synthesis transforms* a conforming decoder must implement. Signalled as `decoder_profile_id`, alongside `stream_profile_id` |
 | **Level** | `cfg/profiles/levels.json` | Maximum picture size and which beta models are allowed. Signalled as `level_idc` |
 | **Operating point** | `cfg/oper_point/*.json` | Which analysis/synthesis network *this run* actually uses |
 
 ### Profiles
 
-| Profile | `decoder_profile_id` | `synthesis_transform_id` | Operating point included |
-| --- | --- | --- | --- |
-| `simple` | 0 | `[0]` | `bopEnc_sopDec` — BOP analysis, SOP synthesis |
-| `main` | 1 | `[1, 0]` | `bop` |
-| `high` | 2 | `[2, 1, 0]` | `hop` |
+| Profile | `decoder_profile_id` | `stream_profile_id` | `synthesis_transform_id` | Operating point included |
+| --- | --- | --- | --- | --- |
+| `simple` | 0 | 0 | `[0]` | `bopEnc_sopDec` — BOP analysis, SOP synthesis |
+| `base` | 1 | 0 | `[1, 0]` | `bop` |
+| `high` | 2 | 0 | `[2, 1, 0]` | `hop` |
+
+Every profile also carries `stream_profile_id`, which is `0` for all three — the parameter is
+declared with `choices=[0]`, so only one stream profile exists so far. It is signalled separately
+from `decoder_profile_id` and validated separately.
 
 The list is ordered: element 0 is the default synthesis transform, and a higher profile must
 support every transform of the lower ones. `cfg/profiles/profiles_list.json` maps
@@ -215,7 +219,7 @@ validates a decoded stream.
 
 | `level_idc1` | Permitted beta models |
 | --- | --- |
-| 0 | `[3]` (beta 0.5 only — lowest rate) |
+| 0 | `[2]` (beta 0.075 only) |
 | 1 | `[2, 3]` |
 | 2 | `[0, 1, 2, 3]` (all) |
 
@@ -250,7 +254,7 @@ flowchart TB
 | --- | --- | --- |
 | `default_models` | `[0, 1, 2, 2, 3]` | Which beta model to use per rate point (0.12, 0.25, 0.50, 0.75, 1.00 bpp) |
 | `default_beta_disp_log` | `[0, 0, -184, 0, 0]` | Log-domain beta displacement per rate point — how far the gain unit shifts from the model's own beta |
-| `independent_beta_UV` | `1` | Search the chroma beta separately from luma |
+| `independent_beta_UV` | `1` | Reuse the luma beta for chroma. The name reads backwards: at `1` the chroma beta is copied from luma, and only at `0` is it searched separately |
 | `BDL_range` per model | e.g. `[-1024, 259]` | Legal beta-displacement-log range for that model |
 
 Passing `--set_target_bpp <N>` on the encoder appends `cfg/BRM/regen_list.json` automatically
