@@ -63,6 +63,15 @@ where `<INPUT_STREAM_PATH>` is the path to the bitstream, `<OUTPUT_PNG_IMAGE_PAT
 
 ## Documentation
 
+Detailed architecture documentation — repository layout, the engine/tool framework, the encoding
+and decoding pipelines, the bitstream format, entropy coding, the neural networks, a per-tool
+reference and the command-line tools, all with diagrams — is in
+[docs/architecture](docs/architecture/README.md).
+
+To read it as HTML, run `make docs` for the Doxygen site (`docs/html/index.html`, architecture
+pages alongside the API reference) or `make docs_single` for one self-contained page
+(`docs/architecture.html`). See [docs/doxygen/README.md](docs/doxygen/README.md) for details.
+
 You may find slides with SW design [here](docs/ppt/VM.pptx).
 
 
@@ -83,3 +92,5 @@ Additional information about setting parameters of training you can find [here](
 - `make tool_perf` runs test `tool_ena` and `tool_dis`.
 - `make export_models` exports models to ONNX and CSV files.
 - `make run_docker` runs docker container.
+- `make docs` builds the HTML documentation (API reference plus the architecture pages) to `docs/html`.
+- `make docs_single` builds the architecture documentation as one self-contained page `docs/architecture.html`.

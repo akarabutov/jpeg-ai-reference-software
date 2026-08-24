@@ -1,0 +1,84 @@
+/* Additions to Doxygen's own stylesheet for the architecture pages.
+   Deliberately narrow: it styles the diagram blocks Doxygen knows nothing
+   about and gives the long prose pages a comfortable measure, without trying
+   to re-skin Doxygen and fight its cascade. */
+
+/* Diagrams ---------------------------------------------------------------- */
+pre.mermaid {
+    display: block;
+    margin: 1.2em 0;
+    padding: 1em;
+    background: #fbfbfd;
+    border: 1px solid #dcdce6;
+    border-radius: 6px;
+    overflow-x: auto;
+    text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #5b5c6e;
+}
+
+pre.mermaid svg {
+    height: auto;
+    /* Keep the page's line-height out of the diagram: Mermaid sizes each node
+       box from a label measured at the default line-height, so inheriting a
+       larger one clips multi-line labels. */
+    line-height: normal;
+}
+
+/* Mermaid sizes a sequence-diagram note from text measured a shade narrower
+   than it renders it at the inherited 16px, so long notes spill out of their
+   box; 15px is the smallest correction that seats every one of them. */
+pre.mermaid svg .noteText,
+pre.mermaid svg .noteText tspan {
+    font-size: 15px;
+}
+
+p.mermaid-note {
+    margin: 1.2em 0 -0.6em;
+    font-size: 12px;
+    font-style: italic;
+    color: #8a8b9c;
+}
+
+/* Prose ------------------------------------------------------------------- */
+div.contents p,
+div.contents li {
+    max-width: 46rem;
+    line-height: 1.62;
+}
+
+div.contents h1,
+div.contents h2,
+div.contents h3 {
+    letter-spacing: -0.01em;
+}
+
+/* Tables ------------------------------------------------------------------ */
+div.contents table.markdownTable {
+    margin: 1.2em 0;
+    border-collapse: collapse;
+}
+
+div.contents table.markdownTable th,
+div.contents table.markdownTable td {
+    padding: 0.45em 0.7em;
+    border: 1px solid #dcdce6;
+    vertical-align: top;
+    text-align: left;
+}
+
+div.contents table.markdownTable th {
+    background: #f2f2f7;
+    font-weight: 600;
+}
+
+/* Inline code ------------------------------------------------------------- */
+div.contents code,
+div.contents tt {
+    background: #f2f2f7;
+    border: 1px solid #e2e2ec;
+    border-radius: 3px;
+    padding: 0.05em 0.3em;
+}
