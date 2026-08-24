@@ -1,5 +1,6 @@
 {
 	"!include": ["../oper_point/hop.json"],
     "decoder_profile_id": 2,
+    "stream_profile_id": 0,
     "synthesis_transform_id": [2,1,0]
 }

@@ -104,7 +104,7 @@ class TestRecoTask(unittest.TestCase):
     def run_reco_test_short(self, img_path, results_path, additional_args:List[str]=list()) -> Tuple[str, str]:
         # Run encoder
         bin_path = os.path.join(results_path, "bin.bin")
-        args = ["--cfg", "cfg/tools_off.json", "cfg/profiles/main.json"] + additional_args
+        args = ["--cfg", "cfg/tools_off.json", "cfg/profiles/base.json"] + additional_args
         enc_ans = self.run_encoder(img_path, bin_path, args)
         self.assertEqual(enc_ans, 0, r"Encoder crashed")
         
@@ -338,7 +338,7 @@ class TestRecoTask(unittest.TestCase):
         #self.init_images()
         self.init_images_tiles()
         region_mse = list()
-        additional_args=["--cfg", 'cfg/tools_on.json', 'cfg/profiles/main.json']
+        additional_args=["--cfg", 'cfg/tools_on.json', 'cfg/profiles/base.json']
         reduction_fn = lambda x: x[..., 1024:, :]
         with tempfile.TemporaryDirectory() as tmpdir:
             input_fn = os.path.join(self.path_in, self.imgs[0])

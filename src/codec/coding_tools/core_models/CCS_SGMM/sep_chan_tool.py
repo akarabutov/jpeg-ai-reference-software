@@ -186,8 +186,8 @@ class SepChannelsSGMMTool(ToolEngine):
         totalRegions = self.common_modules.tile_manager_hyper.numHorRegions * self.common_modules.tile_manager_hyper.numVerRegions
         _, img_width = self.get_processed_img_shape()
         if self.common_modules.tile_manager_hyper.region_partitioning_flag and self.common_modules.tile_manager_hyper.region_residual_in_its_own_substream_flag:
-            verRegionSize = (((full_img_height + 511) // 512) // self.common_modules.tile_manager_hyper.numHorRegions) * 512
-            horRegionSize = (((full_img_width + 511) // 512) // self.common_modules.tile_manager_hyper.numVerRegions) * 512
+            verRegionSize = (((full_img_height + 127) // 128) // self.common_modules.tile_manager_hyper.numHorRegions) * 128
+            horRegionSize = (((full_img_width + 127) // 128) // self.common_modules.tile_manager_hyper.numVerRegions) * 128
             if verRegionSize <= full_img_height and horRegionSize<= full_img_width:
                 tile_size = gcd(verRegionSize,horRegionSize)
             elif verRegionSize <= full_img_height:

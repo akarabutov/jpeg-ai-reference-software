@@ -184,6 +184,9 @@ class CodingEngine(ToolEngine):
         assert self.diff_display_img_height >= 0 and self.diff_display_img_height < 64
         
         # Profile level parameters
+        ec.encode(self.stream_profile_id, 
+                   bits_count=4,
+                   name=r'stream_profile_idc')
         ec.encode(self.decoder_profile_id,
                   bits_count=4,
                   name="decoder_profile_id")
@@ -217,6 +220,9 @@ class CodingEngine(ToolEngine):
 
 
     def decode_header(self, ec: HeaderCoder):
+        self.stream_profile_id = int(ec.decode([1], 
+                                                bits_count=4,
+                                                name=r'stream_profile_idc'))
         # Profile level parameters
         self.decoder_profile_id = int(ec.decode([1],
                                                 bits_count=4, 
@@ -267,6 +273,8 @@ class CodingEngine(ToolEngine):
             profile_cfg = commentjson.load(f)
         # Sanity check
         assert profile_cfg['decoder_profile_id'] == self.decoder_profile_id, "Incorrect value of decoder_profile_id in the configuration file of the profile"
+        # Check stream profile
+        assert profile_cfg['stream_profile_id'] == self.stream_profile_id, "Incorrect value of stream_profile_id in the configuration file of the profile"
         # Check synthesis 
         assert self.get_default_decoder_id() in profile_cfg['synthesis_transform_id'], "The profile doesn't support the synthesis network"
         

@@ -163,8 +163,10 @@ class CcsGvaeSGMM(CoreModelBase):
                 self.region_residual_in_its_own_substream_flag = 0
             else:
                 step = int(math.sqrt(self.NumSamplesInRegion))
-                self.numHorRegions = max(1, math.floor(width / step))
-                self.numVerRegions = max(1, math.floor(height / step))
+                max_ver_num = math.ceil(height / 256)
+                max_hor_num = math.ceil(width / 512)
+                self.numHorRegions = max(1, min(math.floor(width / step), max_hor_num))
+                self.numVerRegions = max(1, min(math.floor(height / step), max_ver_num))
                 self.region_partitioning_flag = 1
         self.set_ec_params()
 
@@ -546,6 +548,10 @@ class CcsGvaeSGMM(CoreModelBase):
         if self.region_partitioning_flag:
             self.numVerRegions = int(ec.decode([1], bits_count=7, name='num_ver_splits_minus1').item()) + 1
             self.numHorRegions = int(ec.decode([1], bits_count=7, name='num_hor_splits_minus1').item()) + 1
+            max_ver_num = math.ceil(self.get_owner_param('img_height') / 256)
+            max_hor_num = math.ceil(self.get_owner_param('img_width') / 512)
+            assert self.numVerRegions <= max_ver_num, "Incorrect number of vertical regions"
+            assert self.numHorRegions <= max_hor_num, "Incorrect number of horizontal regions"
             self.region_residual_in_its_own_substream_flag = int(
                 ec.decode([1], 1, name='region_residual_in_its_own_substream_flag').item())
             if self.region_residual_in_its_own_substream_flag == 0:
@@ -578,8 +584,8 @@ class CcsGvaeSGMM(CoreModelBase):
 
         ec.encode(self.region_partitioning_flag, 1, name='region_partitioning_flag')
         if self.region_partitioning_flag:
-            ec.encode(self.numVerRegions - 1, 2 ** 7 - 1, name='num_ver_splits_minus1')
-            ec.encode(self.numHorRegions - 1, 2 ** 7 - 1, name='num_hor_splits_minus1')
+            ec.encode(self.numVerRegions - 1, bits_count=7, name='num_ver_splits_minus1')
+            ec.encode(self.numHorRegions - 1, bits_count=7, name='num_hor_splits_minus1')
             ec.encode(self.region_residual_in_its_own_substream_flag, 1,
                 name="region_residual_in_its_own_substream_flag")
             if self.region_residual_in_its_own_substream_flag == 0:

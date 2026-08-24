@@ -65,23 +65,23 @@ python3 -m scripts.acc_train_scripts.acc_train_local \
        ## Train only BOP:
        # --vae_encoder_type_list bop \
        # --vae_decoder_type_list bop \
-       # --loss_weights 1,1
+       # --loss_weights 1 \
        # --cfg_path tools_off.json oper_point/bop.json
 
        ## Train only HOP:
        # --vae_encoder_type_list hop \
        # --vae_decoder_type_list hop \
-       # --loss_weights 1,1
+       # --loss_weights 1 \
        # --cfg_path tools_off.json oper_point/hop.json
 
        ## Train encoder BOP, decoder SOP:
        # --vae_encoder_type_list bop \
        # --vae_decoder_type_list sop \
-       # --loss_weights 1,1
+       # --loss_weights 1 \
        # --cfg_path tools_off.json oper_point/bopEnc_sopDec.json
 
        ## Train encoder <ENC>, decoder <DEC>:
        # --vae_encoder_type_list <ENC> \
        # --vae_decoder_type_list <DEC> \
-       # --loss_weights 1,1
+       # --loss_weights 1 \
        # --cfg_path tools_off.json oper_point/common.json oper_point/<ENC>_Enc.json oper_point/<DEC>_Dec.json

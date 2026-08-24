@@ -29,13 +29,24 @@ cd jpeg-ai-reference-software
         To get Docker container run a command: `make run_docker`.
 
 2. Build C++ libraries for testing: `make build_test_libs`.
+3. Download all LFS objects: 
+```
+git lfs fetch
+git lfs checkout
+```
+
+## Downloading datasets for training
+
+Training and Validation datasets could be downloaded by a command: `make download_train_ds`.
+
+The training dataset will be stored to `data/jpegai_training_random_crop` and the validation dataset will be stored to `data/jpegai_validation_set`.
 
 ## Evaluation of the reconstruction task
 
 Evaluation over all images in the dataset:
 
 ```
-activate jpeg_ai_vm
+conda activate jpeg_ai_vm
 make test
 ```
 the results will be stored to a directory `results/test`.
@@ -44,17 +55,17 @@ The script automatically download models and checks there MD5 hashs.
 Use the following command line to encode an image:
 
 ```
-activate jpeg_ai_vm
+conda activate jpeg_ai_vm
 python -m src.reco.coders.encoder <IMAGE_PATH> <OUTPUT_STREAM_PATH> [--set_target_bpp <TARGET_BPPm100>] [--cfg <CFG1> [<CFG2> [<CFG3> ...]]]
 ```
 
-where `<IMAGE_PATH>` is a path to the input image in PNG format, `<OUTPUT_STREAM_PATH>` is a path to the output bitstream, `<TARGET_BPPm100>` is a target bit per pixel multiplied by 100. Specify a list of the configuration files of the encoding. Configuration files load one by one. In a case of running tests without any tool, the command line is: `--cfg cfg/tools_off.json cfg/profiles/<PROFILE>.json`, where `<PROFILE>` is `simple`, `main` or `high`. In a case of running tests without all tools, the command line is: `--cfg cfg/tools_on.json cfg/profiles/<PROFILE>.json`. To run test with enabling only particular tools, use the following command line: `--cfg cfg/tools_off.json cfg/tools/<TOOL1>.json [cfg/tools/<TOOL2>.json ...] cfg/profiles/<PROFILE>.json`. Where `<TOOLN>.json` is one of the files from cfg/tools directory.
+where `<IMAGE_PATH>` is a path to the input image in PNG format, `<OUTPUT_STREAM_PATH>` is a path to the output bitstream, `<TARGET_BPPm100>` is a target bit per pixel multiplied by 100. Specify a list of the configuration files of the encoding. Configuration files load one by one. In a case of running tests without any tool, the command line is: `--cfg cfg/tools_off.json cfg/profiles/<PROFILE>.json`, where `<PROFILE>` is `simple`, `base` or `high`. In a case of running tests without all tools, the command line is: `--cfg cfg/tools_on.json cfg/profiles/<PROFILE>.json`. To run test with enabling only particular tools, use the following command line: `--cfg cfg/tools_off.json cfg/tools/<TOOL1>.json [cfg/tools/<TOOL2>.json ...] cfg/profiles/<PROFILE>.json`. Where `<TOOLN>.json` is one of the files from cfg/tools directory.
 
 
 Run the following command to decode the bitstream file:
 
 ```
-activate jpeg_ai_vm
+conda activate jpeg_ai_vm
 python -m src.reco.coders.decoder <INPUT_STREAM_PATH> <OUTPUT_PNG_IMAGE_PATH> 
 ```
 
@@ -79,17 +90,33 @@ You may find slides with SW design [here](docs/ppt/VM.pptx).
 An example of a command line for training you can find in a file `scripts/train.sh`.
 Additional information about setting parameters of training you can find [here](src/train/README.md).
 
+### Quantization of trained models
+
+Description of quantization process is in the [file](docs/md/quantization.md).
+
+## Progressive decoding
+To enable the progressive decoding functionality, please run `bash scripts/progressive_decoding/reorder.sh` to make the latent tensor be arranged in decerasing entropy order across the channel dimension.
+
+
+### Checkpoints
+
+More imformation can be find information about checkpoints processing [here](docs/md/checkpoints.md)
+
+
 
 ## List of 'make' commands
 
 - `make setup_system` installs all necessary packages on your Ubuntu Linux.
 - `make setup_env` creates conda environment (`jpeg_ai_vm`) install all necessary python's packages and build all necessary c++ libraries.
 - `make build_test_libs` builds all necessary for test C++ libraries.
+- `make build_libs` builds all C++ libraries for test and training.
+- `make download_train_ds` downloads training and validation datasets.
 - `make test` runs test with the default configuration and store results to a directory `results/test`.
 - `make unittest` runs unit tests.
 - `make tool_ena` runs tools-off tests with only one tool enabled.
 - `make tool_dis` runs tools-on tests with only one tool disabled.
 - `make tool_perf` runs test `tool_ena` and `tool_dis`.
+- `make train` runs training.
 - `make export_models` exports models to ONNX and CSV files.
 - `make run_docker` runs docker container.
 - `make docs` builds the HTML documentation (API reference plus the architecture pages) to `docs/html`.

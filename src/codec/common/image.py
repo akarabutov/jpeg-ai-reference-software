@@ -43,7 +43,7 @@ from src.codec.common.colorspace import ColorSpace
 from src.codec.common.image_io import ImageIO
 from src.codec.common.pytorch_ops import TensorOps
 from src.codec.common.ranges_ops import RangesOps
-
+from .pgx import PGXWriter
 
 class Image:
     valid_formats: list = ['420', '444', '422']
@@ -518,7 +518,13 @@ class Image:
         if bit_depth > 8:
             bit_shift = 16 - bit_depth
         ImageIO.write_png(file_path, output_rgb.get_tensor(), self.data_range, bit_depth, bit_shift, fill_bit)
-
+        
+    def write_pgx(self, file_path: str, bit_depth: int = None) -> None:
+        scale_val = 2 ** (bit_depth - self.bit_depth) if bit_depth is not None else 1
+        output_rgb = self.clone()
+        output_rgb.to_RGB_()
+        output_rgb.clip_data_()
+        ImageIO.write_pgx(file_path, output_rgb.get_tensor(), scale_val)
 
     def write_file(self, file_path: str, bit_depth: int = None, fill_bit:int=1) -> None:
         """Write image to an output file. Its format is determined from the path.
@@ -536,6 +542,8 @@ class Image:
             self.write_png(file_path, bit_depth, fill_bit)
         elif file_path.lower().endswith(".yuv"):
             self.write_yuv(file_path, bit_depth)
+        elif file_path.lower().endswith(".pgx"):
+            self.write_pgx(file_path, bit_depth)
         else:
             raise NotImplementedError
 
@@ -572,8 +580,8 @@ class Image:
         wh = re.search(r"(?P<w>\d+)x(?P<h>\d+)", fn)
         b = re.search(r"(?P<b>\d+)bit", fn)
 
-        w = wh.group("w")
-        h = wh.group("h")
+        w = wh.group("w") if wh is not None else -1
+        h = wh.group("h") if wh is not None else -1
 
         b = default_bits if b is None else b.group("b")
         fmt = default_fmt
@@ -667,6 +675,8 @@ class Image:
 
         if bit_depth is None:
             bit_depth = self.bit_depth
+            
+        _, _, bit_depth, fmt = self.extract_info(file_path, bit_depth)
         # yuv = self.yuv_data.copy()
         nr_bytes = np.ceil(bit_depth / 8)
         if nr_bytes == 1:
@@ -683,6 +693,7 @@ class Image:
         # rescale to range of bits
         output_yuv = self.clone()
         output_yuv.to_YUV_()
+        output_yuv.to_format_(fmt)
         output_yuv.convert_range_((0, (1 << bit_depth) - 1))
         output_yuv.round_data_()
         output_yuv.clip_data_()
