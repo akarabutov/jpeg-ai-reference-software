@@ -158,11 +158,22 @@ Three consequences worth knowing:
   and `--collect_only` all arrive that way. (`--base_warmup_epoch`, `--lr` and
   `--anneal_final_lr` are the exception: the template reads the launcher's values through
   `args.…` and substitutes them when they are not `None`.)
-* **`--frozen_part` is appended with string concatenation, not list extension:**
-  `common_parameters += "--frozen_part" + args.frozen_part`. Since `args.frozen_part` is a
-  list, this appends `["--frozen_partentropy", …]`. Passing `--frozen_part` to the launcher
-  therefore produces a broken command line; set freezing per stage in
-  `cfg/train_stages.json` instead, where every stage already does.
+* **`--frozen_part` on the launcher command line kills the run silently.** The forwarding
+  line is
+
+  ```python
+  if len(args.frozen_part) > 0:
+      common_parameters += "--frozen_part" + args.frozen_part
+  ```
+
+  `args.frozen_part` is a list (`nargs="+"`), so `str + list` raises
+  `TypeError: can only concatenate str (not "list") to str` inside
+  `run_stages_for_one_beta()` — before a single training process is launched. That function
+  runs in a `multiprocessing.Pool` worker, and `main()` never calls `results.get()`: it polls
+  `results.ready()`, then `close()` and `join()`. `map_async` stores the exception and
+  nothing ever retrieves it, so the launcher exits 0 with an empty output directory and no
+  error message. Set freezing per stage in `cfg/train_stages.json` instead, where every stage
+  already does.
 * **`--cube_flag_thre` is overridden for the top rate:** the launcher passes
   `args.cube_flag_thre if beta < 0.5 else 0.0`.
 
@@ -794,7 +805,7 @@ Every option `get_args()` defines. "Launcher" means the launcher forwards it to 
 
 | Option | Type / default | Effect |
 | --- | --- | --- |
-| `--frozen_part` | list of `entropy` / `synthesis` / `gain_unit` / `analysis`, `[]` | Excludes groups from the optimizer; `analysis` also disables its gradients; `entropy` changes the luma likelihood path. Stages (the launcher's forwarding of it is broken — see section 3.2) |
+| `--frozen_part` | list of `entropy` / `synthesis` / `gain_unit` / `analysis`, `[]` | Excludes groups from the optimizer; `analysis` also disables its gradients; `entropy` changes the luma likelihood path. Stages. Passing it to the *launcher* crashes the worker silently — see section 3.2 |
 | `--enable_gvae` | int, 0 | Hard-rounded luma residual and dequantise-from-residual reconstruction. Stages. Launcher |
 | `--vae_encoder_type_list` | list, `["bop", "hop"]` | Which analysis transforms to instantiate. Launcher |
 | `--vae_decoder_type_list` | list, `["bop", "hop", "sop"]` | Which synthesis transforms. Launcher |
@@ -970,8 +981,9 @@ python -m src.reco.scripts.eval \
   beta is drawn from `np.random` after a per-epoch reseed.
 * **A stage silently stops at 100 epochs** (`exit()`), regardless of `--epochs`. The shipped
   stages are all shorter, so this only bites custom schedules.
-* **`--frozen_part` on the launcher command line is broken** (string concatenation); use the
-  stage file.
+* **Never pass `--frozen_part` to the launcher.** It raises a `TypeError` that the process
+  pool swallows: the run ends with exit code 0 and an empty output directory. Use the stage
+  file (section 3.2).
 * **`scripts/acc_train_scripts/test.py`** is a runnable end-to-end smoke test: it generates two
   random PNGs, rewrites both configuration files to one beta and one epoch per stage,
   DVC-pulls `models/VM_common/train_stages/MSE_VariableRate_12/*/best.pth`, and asserts that
