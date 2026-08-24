@@ -1,6 +1,6 @@
 .PHONY: setup_system setup_env configure build_test_libs build_libs \
         download_dvc_cache download_test_ds download_models download_train_ds \
-        test all base_cfgs base_cfgs_img30 tool_ena tool_dis tool_perf unittest \
+        test train all base_cfgs base_cfgs_img30 tool_ena tool_dis tool_perf unittest \
         build_docker run_docker export_models docs docs_single
 
 setup_system:
