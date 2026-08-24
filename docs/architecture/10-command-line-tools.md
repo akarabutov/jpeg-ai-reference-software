@@ -288,7 +288,7 @@ This is the pipeline that turns training output into a release model set.
 | --- | --- |
 | `scripts/convert_bitdepth.py <in> <out>` | Convert a single image's bit depth |
 | `scripts/convert_imgs_bitdepth.sh` | Batch version |
-| `scripts/crop_image.sh`, `scripts/image_crop.py --lst --data_dir` | Crop images (training set preparation) |
+| `scripts/crop_image.sh`, `scripts/image_crop.py` | Cut full-size images into fixed-size crops for the training set — all options in [13 — Training](13-training.md) |
 | `scripts/remove_icc_profile.sh` | Strip ICC profiles so PNG decoding is unambiguous |
 | `scripts/remove_opt.sh` | Remove optimiser state from checkpoints |
 | `scripts/process_license.py` | Insert or refresh the BSD licence header in source files |
@@ -298,7 +298,7 @@ This is the pipeline that turns training output into a release model set.
 | Script | Purpose |
 | --- | --- |
 | `scripts/build_ec_lib.sh` | Build the entropy-coding C++ extensions |
-| `scripts/build_train_libs.sh` | Build training libraries (needs the unshipped `src/train`) |
+| `scripts/build_train_libs.sh` | Build the entropy-coding extensions, then install apex from the unshipped `src/train/3rdparty/apex` — see [13 — Training](13-training.md) |
 | `scripts/run_profiler.sh` | Run with profiler collectors enabled |
 | `scripts/run_reco_all_cfgs.sh <out_dir> <cfg> [args]` | Run every configuration; used by CI |
 | `scripts/post_comment_gitlab.py <TOKEN> <PROJECT_ID> <MR_IID> [--files …] [--msg …] [--only_if_files_exist]` | Post CI results as a merge-request comment |

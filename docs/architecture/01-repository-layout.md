@@ -160,11 +160,15 @@ All are DVC pointers; `make download_test_ds` fetches them.
 | `docs/template.xlsm`, `docs/template_img30.xlsm` | Excel templates the result-merging scripts fill in |
 | `docs/SNPE_Time_Profiling.xlsm` | Time profiling workbook |
 
-## A note on `src/train`
+## A note on training
 
-`README.md`, `Dockerfile` and `scripts/train.sh` all reference the `src/train` package, and the
-configuration it would consume is shipped (`cfg/train.json`, `cfg/train_stages.json`,
-`cfg/training_list/`, `models/VM_common/train_stages/`). **The `src/train` package itself is not
-present in this release** — the training code is not distributed with the DIS package. Treat the
-training section of the top-level README, and `scripts/build_train_libs.sh`, as documentation of
-a component that ships separately.
+Everything the training schedule is configured by is shipped — `cfg/train.json`,
+`cfg/train_stages.json`, `cfg/training_list/`, one resume checkpoint per beta under
+`models/VM_common/train_stages/`, the launcher `scripts/train.sh` and the data-preparation
+scripts. **The program that reads them is not.** Two different missing paths are referenced:
+`scripts/train.sh` and `cfg/launch.json` invoke `scripts.acc_train_scripts.acc_train_local`,
+while `scripts/build_train_libs.sh`, the `Dockerfile` and `README.md` refer to a `src/train`
+package. Neither is present in this release.
+
+[13 — Training](13-training.md) documents the schedule and every option in full, and says which
+of them can be resolved from shipped files.
