@@ -5,15 +5,14 @@
 ```
 jpeg-ai-reference-software/
 ├── cfg/            JSON configuration: pipeline, profiles, operating points, per-tool configs
-├── data/           Test and calibration image sets (DVC pointers, images fetched on demand)
+├── data/           Test and calibration image sets
 ├── docs/           Documentation: this directory, markdown notes, slides, Excel templates
-├── models/         Trained checkpoints (.pth) tracked by DVC
+├── models/         Trained checkpoints (.pth)
 ├── scripts/        Shell and Python utilities: setup, build, evaluation drivers, model tooling
 ├── src/            All Python source
 ├── Dockerfile      Container image based on nvcr.io/nvidia/tensorrt
 ├── Doxyfile        Doxygen configuration for API documentation
 ├── Makefile        Entry points for setup, build, test, tool benchmarking, export
-├── dvc.yaml        DVC pipeline stages (VM reconstruction, CV task)
 ├── requirements.txt Pinned Python dependencies (torch 1.10.2, numpy 1.19.1, …)
 └── .gitlab-ci.yml  CI: unit tests plus per-merge-request coding-performance runs
 ```
@@ -96,7 +95,7 @@ src/codec/
 ├── common/                 Image, Decisions, colorspace, logging, tiling helpers, timing
 ├── metrics/                PSNR and MS-SSIM, plus image loading, colour conversion, bpp
 ├── scripts/                CodecEval — the multi-process evaluation harness
-└── utils/                  Downloader (drives dvc fetch/checkout), templating, param loading
+└── utils/                  Downloader (resolves model file paths), templating, param loading
 ```
 
 ## `cfg/` — configuration
@@ -139,10 +138,15 @@ See [03 — Configuration system](03-configuration-system.md) for how these comp
 Betas present in the released models are `0.002`, `0.012`, `0.075` and `0.5` — the four
 "quality models" (`Ntools: 4` in `cfg/pipeline.json`).
 
-Every `.pth` has a companion `.pth.dvc` pointer. `make download_models` runs `dvc pull`, and
-The `Downloader` class in `src/codec/utils/downloader.py` shells out to `dvc fetch` and
-`dvc checkout -f` at
-load time, so DVC verifies the hashes.
+The checkpoints ship in the repository, stored with git-lfs. A fresh clone materialises them
+with
+
+```bash
+git lfs fetch
+git lfs checkout
+```
+
+after which `models/` holds the real `.pth` files rather than LFS pointer stubs.
 
 ## `data/`
 
@@ -152,7 +156,7 @@ load time, so DVC verifies the hashes.
 | `data/test_10bit/` | 10-bit variants |
 | `data/calibration_set/` | Validation subset used by the weight-quantisation search (`<id>_VL_<W>x<H>.png`) |
 
-All are DVC pointers; `make download_test_ds` fetches them.
+All of them ship in the repository, stored with git-lfs alongside the checkpoints.
 
 ## `docs/`
 

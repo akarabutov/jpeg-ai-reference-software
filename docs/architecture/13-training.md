@@ -160,23 +160,30 @@ Three consequences worth knowing:
   `args.…` and substitutes them when they are not `None`.)
 - **`--cube_flag_thre` is overridden for the top rate:** the launcher passes
   `args.cube_flag_thre if beta < 0.5 else 0.0`.
-- **`--frozen_part` must never be passed to the launcher.** It ends the run silently — see
-  immediately below. Set freezing per stage in `cfg/train_stages.json` instead, where every
-  stage already does.
+- **`--frozen_part` accumulates instead of being overridden.** It is the one option that can
+  be set in both places at once and have both take effect — see immediately below.
 
-The `--frozen_part` forwarding line is
+`--frozen_part` is declared with `nargs="+"` *and* `action='append'`, and `get_args()` flattens
+the result:
 
 ```python
-if len(args.frozen_part) > 0:
-    common_parameters += "--frozen_part" + args.frozen_part
+frozen_part = [item for sublist in args.frozen_part for item in sublist] \
+    if isinstance(args.frozen_part, list) else [args.frozen_part]
 ```
 
-`args.frozen_part` is a list (`nargs="+"`), so `str + list` raises
-`TypeError: can only concatenate str (not "list") to str` inside
-`run_stages_for_one_beta()` — before a single training process is launched. That function runs
-in a `multiprocessing.Pool` worker, and `main()` never calls `results.get()`: it polls
-`results.ready()`, then `close()` and `join()`. `map_async` stores the exception and nothing
-ever retrieves it, so the launcher exits 0 with an empty output directory and no error message.
+Every occurrence therefore contributes its values, and the launcher's `--frozen_part` merges
+with the stage's rather than one replacing the other:
+
+| Command line | `args.frozen_part` |
+| --- | --- |
+| *(absent)* | `[]` |
+| `--frozen_part analysis entropy` | `['analysis', 'entropy']` |
+| `--frozen_part analysis --frozen_part entropy` | `['analysis', 'entropy']` |
+| `--frozen_part gain_unit` *(launcher)* + `--frozen_part analysis entropy` *(stage)* | `['gain_unit', 'analysis', 'entropy']` |
+
+The last row is the case that matters: passing `--frozen_part gain_unit` to the launcher while
+stage IV sets `analysis entropy` freezes all three, leaving only the synthesis transform
+trainable. With plain `nargs="+"` the launcher's value would have been lost.
 
 ### 3.3 Crash handling
 
@@ -204,12 +211,17 @@ concurrent betas do not collide.
 | BOP encoder, SOP decoder | `--vae_encoder_type_list bop --vae_decoder_type_list sop --loss_weights 1 --cfg_path tools_off.json oper_point/bopEnc_sopDec.json` |
 | Arbitrary pair | `--cfg_path tools_off.json oper_point/common.json oper_point/<ENC>_Enc.json oper_point/<DEC>_Dec.json` |
 
-Three of them are commented **out** but reference options that do not exist in
-`get_args.py`: `--freeze_entropy_part`, `--train_only_analysis_part` and
-`--train_only_synthesis_part`. They are leftovers from an earlier argument set; the working
-equivalents are `--frozen_part entropy`, `--frozen_part synthesis` and
-`--frozen_part analysis` respectively, set per stage. Because `get_args()` calls
-`parse_known_args()`, passing them would *not* raise — they would be silently ignored.
+Three more recipes cover freezing, and they combine with whatever the stage already freezes
+(see section 3.2):
+
+| Recipe | Arguments |
+| --- | --- |
+| Freeze the entropy part | `--frozen_part entropy` |
+| Train only the analysis part (encoder) | `--frozen_part analysis` |
+| Train only the synthesis part (decoder) | `--frozen_part synthesis` |
+
+Note that the last two read as "train only X" but name the part to *freeze*, so
+`--frozen_part analysis` trains everything except the analysis transform.
 
 The `--cfg_path` values matter only for the automatic-testing runs: they are the inference
 configuration handed to `src.reco.scripts.eval`. They have no effect on the training forward
@@ -806,7 +818,7 @@ Every option `get_args()` defines. "Launcher" means the launcher forwards it to 
 
 | Option | Type / default | Effect |
 | --- | --- | --- |
-| `--frozen_part` | list of `entropy` / `synthesis` / `gain_unit` / `analysis`, `[]` | Excludes groups from the optimizer; `analysis` also disables its gradients; `entropy` changes the luma likelihood path. Stages. Passing it to the *launcher* crashes the worker silently — see section 3.2 |
+| `--frozen_part` | list of `entropy` / `synthesis` / `gain_unit` / `analysis`, `[]` | Excludes groups from the optimizer; `analysis` also disables its gradients; `entropy` changes the luma likelihood path. Stages, launcher — repeated occurrences accumulate rather than override (section 3.2) |
 | `--enable_gvae` | int, 0 | Hard-rounded luma residual and dequantise-from-residual reconstruction. Stages. Launcher |
 | `--vae_encoder_type_list` | list, `["bop", "hop"]` | Which analysis transforms to instantiate. Launcher |
 | `--vae_decoder_type_list` | list, `["bop", "hop", "sop"]` | Which synthesis transforms. Launcher |
@@ -982,11 +994,11 @@ python -m src.reco.scripts.eval \
   beta is drawn from `np.random` after a per-epoch reseed.
 - **A stage silently stops at 100 epochs** (`exit()`), regardless of `--epochs`. The shipped
   stages are all shorter, so this only bites custom schedules.
-- **Never pass `--frozen_part` to the launcher.** It raises a `TypeError` that the process
-  pool swallows: the run ends with exit code 0 and an empty output directory. Use the stage
-  file (section 3.2).
+- **`--frozen_part` given to the launcher adds to what the stage freezes**, it does not
+  replace it (section 3.2). Naming all four groups leaves `init_optimizer()` with an empty
+  parameter list to hand to Adam.
 - **`scripts/acc_train_scripts/test.py`** is a runnable end-to-end smoke test: it generates two
   random PNGs, rewrites both configuration files to one beta and one epoch per stage,
-  DVC-pulls `models/VM_common/train_stages/MSE_VariableRate_12/*/best.pth`, and asserts that
+  resumes from `models/VM_common/train_stages/MSE_VariableRate_12/*/best.pth`, and asserts that
   every stage produced `val_results.json` and that no metric came back `None`. It is the
   fastest way to check a training environment.

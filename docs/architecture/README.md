@@ -24,7 +24,7 @@ post-filters) is built around those networks.
 | [08 — Neural network components](08-neural-network-components.md) | Analysis/synthesis transforms, hyperprior, context model, layers |
 | [09 — Coding tools reference](09-coding-tools-reference.md) | Per-tool documentation: purpose, config keys, signalling |
 | [10 — Command-line tools](10-command-line-tools.md) | Every executable entry point and shell/Python utility |
-| [11 — Evaluation and testing](11-evaluation-and-testing.md) | The evaluation harness, metrics, CI, DVC, model management |
+| [11 — Evaluation and testing](11-evaluation-and-testing.md) | The evaluation harness, metrics, CI, model management |
 | [12 — Parameter resolution](12-parameter-resolution.md) | How the command line and the config files reach the tool tree |
 | [13 — Training](13-training.md) | The launcher, the five-stage schedule, the training loop and every option |
 
@@ -66,7 +66,7 @@ flowchart TB
     REC["Reconstructed image<br/>PNG / YUV"]
 
     CFG[/"cfg/*.json<br/>pipeline · profile · tools"/]
-    MDL[/"models/*.pth<br/>trained checkpoints (DVC)"/]
+    MDL[/"models/*.pth<br/>trained checkpoints"/]
 
     IMG --> E1
     E2 --> BS

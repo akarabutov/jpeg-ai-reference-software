@@ -137,7 +137,7 @@ disagree — and attaches them to the merge request.
 ```mermaid
 flowchart TB
     MR["Merge request"] --> S1["Stage: unit-test"]
-    S1 --> U1["conda activate jpeg_ai_vm<br/>pip install -r requirements.txt<br/>dvc remote configure"]
+    S1 --> U1["conda activate jpeg_ai_vm<br/>pip install -r requirements.txt"]
     U1 --> U2["./scripts/build_test_libs.sh"]
     U2 --> U3["python -m src.reco.scripts.eval --only_cpu<br/><i>generates the files the tests need</i>"]
     U3 --> U4["python -m unittest -v"]
@@ -171,54 +171,29 @@ change. That workbook, not a pass/fail flag, is the actual review artefact.
 | `double-quote-string-fixer` | Prefer single quotes |
 | `fix-encoding-pragma --remove` | Strip `# -*- coding: utf-8 -*-` |
 | `requirements-txt-fixer` | Keep `requirements.txt` sorted |
-| `dvc-pre-commit`, `dvc-pre-push`, `dvc-post-checkout` | Keep DVC-tracked files in sync with the working tree |
 
 All hooks exclude `3rdparty|thirdparty`.
 
-## 7. Data and model management with DVC
+## 7. Data and model management
 
-```mermaid
-flowchart LR
-    subgraph REPO["Git repository"]
-        P1["models/VM_bop/decoder_Y_0.002.pth.dvc"]
-        P2["data/test/00030_….png.dvc"]
-    end
-    subgraph REMOTE["DVC remote 'storage'"]
-        C["ssh://storage_reader@jpeg-git.lx.it.pt/cache"]
-    end
-    subgraph LOCAL["Working tree"]
-        F1["models/VM_bop/decoder_Y_0.002.pth"]
-        F2["data/test/00030_….png"]
-    end
+The trained checkpoints and the image sets ship in the repository, stored with git-lfs:
 
-    P1 -.dvc pull.-> F1
-    P2 -.dvc pull.-> F2
-    C --> F1
-    C --> F2
-    F1 --> DL["Downloader<br/>dvc fetch + checkout at load time"]
-```
+| Path | Contents |
+| --- | --- |
+| `models/` | Every operating point plus the common modules — 80 `.pth` files |
+| `data/test/` | The 50-image JPEG AI test set |
+| `data/calibration_set/` | The subset the weight-quantisation search uses |
+| `models/VM_common/train_stages/` | Per-beta resume checkpoints for the training schedule |
 
-Git holds only `.dvc` pointer files; the binaries come from the remote configured in
-`.dvc/config`. The `Downloader` in `src/codec/utils/downloader.py` runs `dvc fetch` and
-`dvc checkout -f`
-on a model's pointers when it is first needed, so DVC re-verifies content hashes and a partial or
-stale pull is repaired rather than silently producing wrong output.
-`critical_for_file_absence` (inverted by `--skip_loading_error`) decides whether a missing file is
-fatal.
+A fresh clone gets pointer stubs; `git lfs fetch` followed by `git lfs checkout` materialises the
+real files. The one dataset that is *not* in the repository is the training set — it is far too
+large, and `make download_train_ds` pulls it over sFTP (see
+[13 — Training](13-training.md)).
 
-For teams behind a slow link, `scripts/sFTP_mirror/` sets up a local mirror of the cache with a
-3-hourly cron refresh and generates a `.dvc/config.local` pointing at it.
-
-`dvc.yaml` declares two pipeline stages, so `dvc repro` can drive the whole evaluation:
-
-```yaml
-stages:
-  VM: python -m src.reco.scripts.eval -coding_type enc_dec -out_dir ./results/VM
-  CV: python -m src.cv.scripts.eval data/imagenet_val ./results/CV -coding_type enc_dec
-```
-
-Note the `CV` stage references `src/cv`, a computer-vision task package that is **not present in
-this release** — like `src/train`, it ships separately.
+At load time `Downloader` (`src/codec/utils/downloader.py`) only resolves paths:
+`get_file_path(model_name, file_name)` returns the path under `models/`, or `None` when the file
+is absent and `critical_for_file_absence` is clear — which is what `--skip_loading_error` does.
+With the flag unset a missing file ends the run instead.
 
 ## 8. Reproducibility
 
@@ -250,5 +225,5 @@ which names the stage that broke — far quicker than bisecting a pixel differen
 | Entropy coder desync | Check the σ path: is `VM_common_int` being used? Did the me-tANS cache go stale (`--rebuild_ae_cache 1`)? |
 | Out of memory | Reduce `numSamplesPerTile` in the tile managers, or enable region partitioning |
 | Non-deterministic results | Confirm the `determinism` decorators are on the path you changed, and that TF32 is off |
-| Model fails to load | Run `dvc pull` manually and read its output — the `Downloader` only reports "No *.dvc files" / "No information about model" and exits |
+| Model fails to load | Check that git-lfs materialised the checkpoints — a 132-byte `.pth` is still a pointer stub. Run `git lfs checkout`. The `Downloader` only reports "No information about model" and exits |
 | Slow encode | The bitrate matcher in search mode re-runs compression per candidate beta — use `cfg/BRM/use_list.json` or `default.json` |

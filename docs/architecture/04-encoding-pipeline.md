@@ -41,7 +41,7 @@ sequenceDiagram
 
     CLI->>Coder: process_encoder()
     Coder->>Coder: init_common_codec()<br/>build the tool tree from --cfg
-    Coder->>Coder: load_models(downloader)<br/>fetch via DVC and load .pth files
+    Coder->>Coder: load_models(downloader)<br/>resolve paths and load .pth files
     Coder->>Coder: set_target_bpp_idx(bpp_idx)
 
     Coder->>CE: compress(raw_image)
