@@ -1,5 +1,5 @@
 .PHONY: setup_system setup_env configure build_test_libs build_libs \
-        download_dvc_cache download_test_ds download_models download_train_ds \
+        download_train_ds \
         test train all base_cfgs base_cfgs_img30 tool_ena tool_dis tool_perf unittest \
         build_docker run_docker export_models docs docs_single
 
@@ -16,15 +16,6 @@ build_test_libs:
 
 build_libs: build_test_libs
 
-download_dvc_cache:
-	./scripts/sFTP_mirror/download_cache.sh
-
-download_test_ds:
-	./scripts/download_test_ds.sh
-
-download_models:
-	./scripts/download_models.sh
-
 download_train_ds:
 	./scripts/download_train_ds.sh
 
@@ -34,7 +25,7 @@ test:
 train:
 	./scripts/train.sh
 
-all: configure build_test_libs download_test_ds test
+all: configure build_test_libs test
 
 base_cfgs_img30:
 	rm -Rf ./results/base_cfgs_img30
