@@ -291,7 +291,7 @@ def get_args(args_list = None):
                         nargs="+",
                         default=[],
                         choices=['entropy', 'synthesis', 'gain_unit', 'analysis'],
-                        help='Froze parts of networks')
+                        help='Froze parts of networks', action='append')
     parser.add_argument('--cal_entropy_on_val',
                         type=str2bool,
                         default=False,
@@ -311,5 +311,9 @@ def get_args(args_list = None):
     assert args.mem_format == 'channel_first'
     if not args.overfit:
         args.rec_dir=''
+
+    frozen_part = [item for sublist in args.frozen_part for item in sublist] if isinstance(args.frozen_part, list) else [args.frozen_part]
+    args.frozen_part = frozen_part
+        
     print(args)
     return args
