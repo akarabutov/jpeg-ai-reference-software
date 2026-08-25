@@ -149,7 +149,7 @@ def run_stages_for_one_beta(beta, args, beta_2_gpus, train_cfg):
     common_parameters += ['--vae_encoder_type_list'] + args.vae_encoder_type_list
     common_parameters += ['--vae_decoder_type_list'] + args.vae_decoder_type_list
     if len(args.frozen_part) > 0:
-        common_parameters += "--frozen_part" + args.frozen_part
+        common_parameters += ["--frozen_part"] + args.frozen_part
     
     if args.overfit:
         common_parameters.append('--overfit')

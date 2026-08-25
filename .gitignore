@@ -41,3 +41,10 @@ venv.bak/
 src/codec/entropy_coding/lib_wrappers/mans/cache*pt
 src/codec/entropy_coding/lib_wrappers/mans/*.so
 src/codec/entropy_coding/lib_wrappers/direct/*.so
+
+# Generated documentation (build with `make docs` / `make docs_single`)
+docs/html/
+docs/doxygen/generated/
+docs/doxygen/assets/mermaid.min.js
+docs/architecture.html
+docs/mermaid.min.js
