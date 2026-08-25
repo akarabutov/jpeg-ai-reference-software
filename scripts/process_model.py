@@ -33,7 +33,6 @@
 import argparse
 import os
 import fnmatch
-import sys
 from cleanup_cp import cleanup_cp
 
 def get_full_list_of_files(root_dir, mask, base_dir=None):
@@ -49,10 +48,8 @@ def get_full_list_of_files(root_dir, mask, base_dir=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_name', type=str, default=None)
-    parser.add_argument('--push', action='store_true', default=False)
     parser.add_argument('--pack', action='store_true', default=False)
     parser.add_argument('--ckeckpoints-mask', default='*.pth', help=r'Glob mask for checkpoints')
-    parser.add_argument('-r', default=None, help='Name of remote of DVC for storing checkpints')
     parser.add_argument('--exclude-keys', default=["best_loss", "optimizer"], nargs="+", help='List of keys for exclusion from checkpoints before storing')
     args = parser.parse_args()
 
@@ -65,24 +62,9 @@ def main():
         for fn in cp_list:
             cleanup_cp(fn, fn, args.exclude_keys)
         
-    dvc_list = [x + ".dvc" for x in cp_list]
-       
-    
-    python_bin = os.path.dirname(sys.executable)
-    dvc_path = os.path.join(python_bin, 'dvc')
-
-    cmds = [
-        f'{dvc_path} add ' + ' '.join(cp_list),
-        f'{dvc_path} commit ' + ' '.join(dvc_list)
-    ]
-    if args.push:
-        s = f'{dvc_path} push ' + ' '.join(dvc_list)
-        if args.r is not None:
-            s += f' -r {args.r}'
-        cmds.append(s)
-
-    os.system(' && '.join(cmds))
-    os.system(f'git add ' + ' '.join(dvc_list))
+    # The checkpoints are stored in the repository itself; the git-lfs filter
+    # configured in .gitattributes turns them into pointers on commit.
+    os.system('git add ' + ' '.join(cp_list))
 
     if args.pack:
         path = os.path.join(base_path, f'{args.model_name}.tgz')

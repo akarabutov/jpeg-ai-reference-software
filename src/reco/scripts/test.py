@@ -51,12 +51,10 @@ class TestRecoTask(unittest.TestCase):
     def init_images(self):
         self.path_in = 'data/test'
         self.imgs = ['00030_TE_560x888_8bit_sRGB.png', '00018_TE_3032x1856_8bit_sRGB.png']
-        self.dvc_pull([os.path.join(self.path_in, img) for img in self.imgs])
 
     def init_images_tiles(self):
         self.path_in = 'data/test'
         self.imgs = ['00001_TE_2096x1400_8bit_sRGB.png']
-        self.dvc_pull([os.path.join(self.path_in, img) for img in self.imgs])
 
     def create_png_file(self, dir_path: str, index: int, max_size: int):
         w = np.random.randint(100, max_size//2)*2
@@ -163,10 +161,6 @@ class TestRecoTask(unittest.TestCase):
             self.run_reco_test_full(img_path=path_in, 
                                results_path=path_out, 
                                additional_args=["--use_yuv", "1", "--imgs"] + files_list)
-            
-    def dvc_pull(self, file_list: List[str]) -> int:
-        cmd = [sys.executable, '-m', 'dvc', 'pull'] + [f'{x}.dvc' for x in file_list]
-        os.system(' '.join(cmd) + " > /dev/null 2>&1")        
             
     ## Tests
     def test_recotask_yuv420(self):

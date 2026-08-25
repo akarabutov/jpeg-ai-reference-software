@@ -49,7 +49,6 @@ cd ${SCRIPT_DIR}/..
 eval "$(conda shell.bash hook)"
 
 conda activate ${env_name}
-dvc pull data/calibration_set/*.dvc
 
 LOCATION_OF_PREPARED_DATA=data/dump
 
