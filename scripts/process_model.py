@@ -64,7 +64,8 @@ def main():
         
     # The checkpoints are stored in the repository itself; the git-lfs filter
     # configured in .gitattributes turns them into pointers on commit.
-    os.system('git add ' + ' '.join(cp_list))
+    # -f because .gitignore lists *.pth: the checkpoints are deliberate exceptions.
+    os.system('git add -f ' + ' '.join(cp_list))
 
     if args.pack:
         path = os.path.join(base_path, f'{args.model_name}.tgz')

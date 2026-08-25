@@ -153,7 +153,6 @@ after which `models/` holds the real `.pth` files rather than LFS pointer stubs.
 | Directory | Contents |
 | --- | --- |
 | `data/test/` | The JPEG AI 8-bit sRGB test set, named `<id>_TE_<W>x<H>_8bit_sRGB.png` |
-| `data/test_10bit/` | 10-bit variants |
 | `data/calibration_set/` | Validation subset used by the weight-quantisation search (`<id>_VL_<W>x<H>.png`) |
 
 All of them ship in the repository, stored with git-lfs alongside the checkpoints.

@@ -1,5 +1,0 @@
-stages:
-  VM:
-    cmd: python -m src.reco.scripts.eval -coding_type enc_dec -out_dir ./results/VM
-  CV:
-    cmd: python -m src.cv.scripts.eval data/imagenet_val ./results/CV -coding_type enc_dec

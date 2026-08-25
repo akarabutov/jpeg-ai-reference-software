@@ -1,7 +1,3 @@
-!models/*/*.dvc
-!data/test/*.dvc
-!data/test_10bit/*.dvc
-!data/calibration_set/*.dvc
 # Cached Files
 __pycache__/
 *.py[cod]
@@ -20,7 +16,6 @@ RESULTS_lsbs/
 RESULTS_both/
 base*/
 high*/
-.dvc/
 
 # Jupyter Notebook
 *.ipynb
