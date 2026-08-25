@@ -54,13 +54,13 @@ python3 -m scripts.acc_train_scripts.acc_train_local \
        # --resume_from_stage MSE_VariableRate_12
 
        ## Freeze entropy part
-       # --freeze_entropy_part 1
+       # --frozen_part entropy
 
        ## Train only analysis part (encoder):
-       # --train_only_analysis_part 1
+       # --frozen_part analysis
 
        ## Train only synthesis part (decoder):
-       # --train_only_synthesis_part 1
+       # --frozen_part synthesis
 
        ## Train only BOP:
        # --vae_encoder_type_list bop \
