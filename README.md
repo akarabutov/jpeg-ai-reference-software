@@ -76,6 +76,40 @@ You may find slides with SW design [here](docs/ppt/VM.pptx).
 
 
 
+## Training dataset
+
+The training and validation datasets live on the JPEG AI sFTP server; the account password is
+published in the ISO document that `scripts/download_train_ds.py --help` links to. Download and
+unpack everything with:
+
+```
+make download_train_ds
+```
+
+The datasets are tens of gigabytes, so transfers resume: running the command again continues a
+partial download instead of starting over, and archives that are already complete are skipped.
+Options can be passed either to `scripts/download_train_ds.sh` or to the Python script directly:
+
+| Option | Purpose |
+| --- | --- |
+| `--parts train scc validation` | Fetch only some of the datasets |
+| `--status` | Report what is already downloaded and unpacked, without connecting |
+| `--dry-run` | Print the download and unpack plan, then exit |
+| `--skip-download` / `--skip-extract` | Unpack the archives already on disk / download only |
+| `--remove-archives` | Delete each archive once it has been unpacked |
+| `--password-file FILE` | Read the password from a file instead of prompting; the environment variable `JPEG_AI_SFTP_PASSWORD` works too |
+| `--identity KEY` | Authenticate with an ssh key instead of a password |
+| `--refresh` | Take the archive list from the server instead of the built-in one |
+
+The result is the layout the training scripts expect:
+
+```
+data/jpegai_training_random_crop/                                   training patches
+data/jpegai_training_random_crop/jpegai_training_set512_random_crop_16.txt
+data/jpegai_validation_set/                                         validation images
+data/jpegai_validation_set/jpegai_validation_set_10.txt
+```
+
 An example of a command line for training you can find in a file `scripts/train.sh`.
 Additional information about setting parameters of training you can find [here](src/train/README.md).
 
@@ -85,6 +119,7 @@ Additional information about setting parameters of training you can find [here](
 - `make setup_system` installs all necessary packages on your Ubuntu Linux.
 - `make setup_env` creates conda environment (`jpeg_ai_vm`) install all necessary python's packages and build all necessary c++ libraries.
 - `make build_test_libs` builds all necessary for test C++ libraries.
+- `make download_train_ds` downloads and unpacks the training and validation datasets (see [Training dataset](#training-dataset)).
 - `make test` runs test with the default configuration and store results to a directory `results/test`.
 - `make unittest` runs unit tests.
 - `make tool_ena` runs tools-off tests with only one tool enabled.
