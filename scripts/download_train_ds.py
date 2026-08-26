@@ -106,6 +106,69 @@ CHECKSUM_SUFFIXES = ('.md5', '.sha1', '.sha256')
 VOLUME_RE = re.compile(r'^(?P<base>.+\.(?:7z|zip|tar|tar\.gz|tgz|tar\.bz2|tar\.xz))'
                        r'\.(?P<index>\d{2,})$', re.IGNORECASE)
 
+# The catalogue published as v2026_01, the same on both mirrors.  It is only used when a
+# mirror does not serve a directory index; the sizes are still confirmed against the
+# server, and a file the server does not have is dropped.
+KNOWN_CATALOGUE_VERSION = 'v2026_01'
+KNOWN_CATALOGUE = (
+    ('jpegai_reference_software.zip', 1494803328),
+    ('jpegai_train-extra_CP50.tar', 3830272),
+    ('jpegai_train-extra_EXCEL300.tar', 33928704),
+    ('jpegai_train-extra_HF2000.tar', 1064664064),
+    ('jpegai_train-extra_LQ7000.tar', 3267666944),
+    ('jpegai_train-extra_MD300.tar', 73410560),
+    ('jpegai_train-extra_PHF200.tar', 1207808),
+    ('jpegai_train-extra_PHFA500.tar', 3316736),
+    ('jpegai_train-extra_SCC7000P2.tar', 1409797632),
+    ('jpegai_train-natural-cropped_00000-01299_bundle.7z.001', 5368709120),
+    ('jpegai_train-natural-cropped_00000-01299_bundle.7z.002', 5368709120),
+    ('jpegai_train-natural-cropped_00000-01299_bundle.7z.003', 5368709120),
+    ('jpegai_train-natural-cropped_00000-01299_bundle.7z.004', 5368709120),
+    ('jpegai_train-natural-cropped_00000-01299_bundle.7z.005', 5368709120),
+    ('jpegai_train-natural-cropped_00000-01299_bundle.7z.006', 5368709120),
+    ('jpegai_train-natural-cropped_00000-01299_bundle.7z.007', 5368709120),
+    ('jpegai_train-natural-cropped_00000-01299_bundle.7z.008', 5368709120),
+    ('jpegai_train-natural-cropped_00000-01299_bundle.7z.009', 4666395408),
+    ('jpegai_train-natural-cropped_01300-02599_bundle.7z.001', 5368709120),
+    ('jpegai_train-natural-cropped_01300-02599_bundle.7z.002', 5368709120),
+    ('jpegai_train-natural-cropped_01300-02599_bundle.7z.003', 5368709120),
+    ('jpegai_train-natural-cropped_01300-02599_bundle.7z.004', 5368709120),
+    ('jpegai_train-natural-cropped_01300-02599_bundle.7z.005', 5368709120),
+    ('jpegai_train-natural-cropped_01300-02599_bundle.7z.006', 5368709120),
+    ('jpegai_train-natural-cropped_01300-02599_bundle.7z.007', 5368709120),
+    ('jpegai_train-natural-cropped_01300-02599_bundle.7z.008', 5368709120),
+    ('jpegai_train-natural-cropped_01300-02599_bundle.7z.009', 4202585266),
+    ('jpegai_train-natural-cropped_02600-03899_bundle.7z.001', 5368709120),
+    ('jpegai_train-natural-cropped_02600-03899_bundle.7z.002', 5368709120),
+    ('jpegai_train-natural-cropped_02600-03899_bundle.7z.003', 5368709120),
+    ('jpegai_train-natural-cropped_02600-03899_bundle.7z.004', 5368709120),
+    ('jpegai_train-natural-cropped_02600-03899_bundle.7z.005', 5368709120),
+    ('jpegai_train-natural-cropped_02600-03899_bundle.7z.006', 5368709120),
+    ('jpegai_train-natural-cropped_02600-03899_bundle.7z.007', 5368709120),
+    ('jpegai_train-natural-cropped_02600-03899_bundle.7z.008', 5368709120),
+    ('jpegai_train-natural-cropped_02600-03899_bundle.7z.009', 3339274609),
+    ('jpegai_train-natural-cropped_03900-05263_bundle.7z.001', 5368709120),
+    ('jpegai_train-natural-cropped_03900-05263_bundle.7z.002', 5368709120),
+    ('jpegai_train-natural-cropped_03900-05263_bundle.7z.003', 5368709120),
+    ('jpegai_train-natural-cropped_03900-05263_bundle.7z.004', 5368709120),
+    ('jpegai_train-natural-cropped_03900-05263_bundle.7z.005', 5368709120),
+    ('jpegai_train-natural-cropped_03900-05263_bundle.7z.006', 5368709120),
+    ('jpegai_train-natural-cropped_03900-05263_bundle.7z.007', 2444367678),
+    ('jpegai_train-natural-full_bundle.7z.001', 5368709120),
+    ('jpegai_train-natural-full_bundle.7z.002', 5368709120),
+    ('jpegai_train-natural-full_bundle.7z.003', 5368709120),
+    ('jpegai_train-natural-full_bundle.7z.004', 5368709120),
+    ('jpegai_train-natural-full_bundle.7z.005', 5368709120),
+    ('jpegai_train-natural-full_bundle.7z.006', 5368709120),
+    ('jpegai_train-natural-full_bundle.7z.007', 5368709120),
+    ('jpegai_train-natural-full_bundle.7z.008', 5368709120),
+    ('jpegai_train-natural-full_bundle.7z.009', 5368709120),
+    ('jpegai_train-natural-full_bundle.7z.010', 5368709120),
+    ('jpegai_train-natural-full_bundle.7z.011', 3978987972),
+    ('jpegai_valid-natural-full_bundle.7z.001', 4041065075),
+    ('jpegai_valid-natural_cropped_bundle.7z.001', 4038870070),
+)
+
 USER_AGENT = 'jpeg-ai-reference-software dataset downloader'
 CHUNK = 1 << 20
 # Rough size of the unpacked content relative to the archives, for the disk space check.
@@ -402,14 +465,44 @@ def fetch_text(url, timeout=60):
     return raw.decode(charset, 'replace')
 
 
-def head_size(url, timeout=30):
-    """Ask the server how large a file is; returns None when it will not say."""
+def head_probe(url, timeout=30):
+    """Ask the server about a file: returns ``(state, size)``.
+
+    ``state`` is 'ok' when the file is there, 'missing' when the server says it is not, and
+    'unknown' when the question could not be answered.
+    """
     try:
         with http_open(url, method='HEAD', timeout=timeout) as response:
             length = response.headers.get('Content-Length')
-            return int(length) if length is not None else None
+            return 'ok', int(length) if length is not None else None
+    except urllib.error.HTTPError as error:
+        return ('missing', None) if error.code in (403, 404, 410) else ('unknown', None)
     except (urllib.error.URLError, OSError, ValueError):
-        return None
+        return 'unknown', None
+
+
+def head_size(url, timeout=30):
+    """Ask the server how large a file is; returns None when it will not say."""
+    return head_probe(url, timeout=timeout)[1]
+
+
+def catalogue_from_known(base_url, use_head=True):
+    """Build the file list from the published catalogue, for a mirror with no index.
+
+    The names are the ones both mirrors publish; each is confirmed against the server, so a
+    catalogue that has moved on does not invent files that are not there.
+    """
+    ans = list()
+    for name, size in KNOWN_CATALOGUE:
+        url = urllib.parse.urljoin(base_url, name)
+        if not use_head:
+            ans.append(RemoteFile(name, url, size))
+            continue
+        state, exact = head_probe(url)
+        if state == 'missing':
+            continue
+        ans.append(RemoteFile(name, url, exact if exact is not None else size))
+    return ans
 
 
 def crawl(base_url, depth=2, use_head=True, verbose=False):
@@ -1483,8 +1576,16 @@ def main(argv=None):
 
     base_url, source = resolve_source(args, interactive)
     print(f'\nReading the catalogue from {base_url}')
-    files, checksums = crawl(base_url, depth=args.depth, use_head=args.use_head,
-                             verbose=args.verbose)
+    try:
+        files, checksums = crawl(base_url, depth=args.depth, use_head=args.use_head,
+                                 verbose=args.verbose)
+    except DatasetError as error:
+        print(f'  the directory index could not be read: {error}')
+        files, checksums = list(), dict()
+    if not files:
+        # Some mirrors serve the files but not a listing of them.
+        print(f'  falling back to the published {KNOWN_CATALOGUE_VERSION} catalogue')
+        files = catalogue_from_known(base_url, use_head=args.use_head)
     archives = group_volumes(files)
     if not archives:
         raise DatasetError(f'No archives found under {base_url}. Check the address, or point '

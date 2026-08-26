@@ -94,7 +94,7 @@ transfer (`bytes_for_policy()`), and archives whose content is already unpacked 
 unpacked again on request. `--check` prints that comparison for everything the mirror offers
 and exits; `--status` reports the local side alone, without connecting.
 
-The catalogue is not hard-coded. `crawl()` walks the mirror's published directory index,
+The catalogue is read from the mirror. `crawl()` walks the mirror's published directory index,
 `group_volumes()` gathers split bundles (`...bundle.7z.001`, `.002`, …) back into one logical
 archive, and `classify()` reads each name: `jpegai_train-natural-full_*`,
 `jpegai_train-natural-cropped_<range>_*`, `jpegai_train-extra_<NAME>_*`,
@@ -103,7 +103,10 @@ used before the datasets moved to these mirrors. The reference software publishe
 them is recognised and left alone, and anything that cannot be placed is offered separately
 rather than downloaded silently; `--list-remote` shows the whole classification. Sizes come
 from the index — `IndexParser` rebuilds the rows of an Apache or IIS listing so a size stays
-with its own file — and are confirmed with a HEAD request.
+with its own file — and are confirmed with a HEAD request. A mirror that serves the files but
+no listing falls back to `KNOWN_CATALOGUE`, the names and sizes published as `v2026_01` and
+identical on both mirrors; each is probed with HEAD first, so a catalogue that has moved on
+cannot invent files that are not there.
 
 Transfers resume with a Range request, are retried, and are checked against the published
 `.md5`/`.sha256` when the mirror has one. Unpacking uses `zipfile`/`tarfile` for `.zip` and

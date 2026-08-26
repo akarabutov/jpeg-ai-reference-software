@@ -104,9 +104,11 @@ bytes it will actually transfer. It ends with a summary of the total download, t
 needed and the free space at the destination.
 
 The catalogue is read from the mirror itself — the published directory index is walked and the
-sizes are taken from it — so nothing is hard-coded and a renamed or added archive is picked up
-automatically. `--list-remote` prints what a mirror offers and how each archive was classified;
-`--check` compares all of it against what is already on disk without downloading anything.
+sizes are taken from it — so a renamed or added archive is picked up automatically. If a mirror
+serves the files but no listing, the script falls back to the catalogue published as `v2026_01`
+(the same on both mirrors) and confirms every name against the server before offering it.
+`--list-remote` prints what a mirror offers and how each archive was classified; `--check`
+compares all of it against what is already on disk without downloading anything.
 Downloads resume, and the large datasets are published as split 7-Zip bundles
 (`...bundle.7z.001`, `.002`, …), which are downloaded volume by volume and unpacked with `7z`
 (`sudo apt install p7zip-full`, also installed by `make setup_system`).
