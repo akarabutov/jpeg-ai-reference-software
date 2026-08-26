@@ -18,6 +18,7 @@ cd jpeg-ai-reference-software
     - doxygen 1.8.13
     - graphviz 2.40.1
     - git-lfs 3.0.2
+    - p7zip-full (to unpack the training datasets)
 
 ## Setup Environment
 
@@ -88,18 +89,27 @@ and the script asks what is needed, showing how much each choice downloads:
 
 1. which mirror to use — ISO (`standards.iso.org`) or ITU (`www.itu.int`);
 2. which datasets — training, validation or both;
-3. for the training set, whether the natural content is wanted as full-size images or as
-   cropped patches, and which of the extra datasets (screen content, high frequency, ...)
-   to add;
-4. for the validation set, a confirmation of its size;
+3. for the training set, whether the natural content is wanted as full-size images
+   (~54 GiB) or as cropped patches (~164 GiB in four ranges), and which of the extra
+   datasets — `SCC7000P2`, `HF2000`, `LQ7000`, `MD300`, `EXCEL300`, `PHF200`, `PHFA500`,
+   `CP50`, ~5.5 GiB together — to add;
+4. for the validation set, which form (cropped or full-size, ~3.8 GiB each) and a
+   confirmation of the size;
 
-followed by whether to unpack the archives, whether to delete them afterwards, and a summary
-with the total download, the disk space needed and the destination.
+then whether to unpack the archives and whether to keep them afterwards. Anything already on
+disk is checked first: the script reports which archives are complete, which are short and by
+how much, and which have already been unpacked, and offers to finish the incomplete ones, to
+download everything again, or to leave what is there alone — each option with the number of
+bytes it will actually transfer. It ends with a summary of the total download, the disk space
+needed and the free space at the destination.
 
-The catalogue is read from the mirror itself — the script walks the published directory index
-and takes the sizes from it — so nothing is hard-coded and a renamed or added archive is picked
-up automatically. `--list-remote` prints what a mirror offers and how each archive was
-classified. Downloads resume, so a run that was interrupted can simply be started again.
+The catalogue is read from the mirror itself — the published directory index is walked and the
+sizes are taken from it — so nothing is hard-coded and a renamed or added archive is picked up
+automatically. `--list-remote` prints what a mirror offers and how each archive was classified;
+`--check` compares all of it against what is already on disk without downloading anything.
+Downloads resume, and the large datasets are published as split 7-Zip bundles
+(`...bundle.7z.001`, `.002`, …), which are downloaded volume by volume and unpacked with `7z`
+(`sudo apt install p7zip-full`, also installed by `make setup_system`).
 
 Every answer also has an option, which makes the same run repeatable without questions:
 
@@ -108,11 +118,14 @@ Every answer also has an option, which makes the same run repeatable without que
 | `--source {iso,itu}` | Mirror to download from |
 | `--datasets {train,validation,both}` | Which datasets are needed |
 | `--natural {full,patches,none}` | Full-size natural images or cropped patches |
+| `--validation {cropped,full,all,none}` | Which form of the validation set |
 | `--extras all\|none\|NAME,NAME` | Extra training datasets |
+| `--existing {resume,redownload,skip}` | What to do with archives already on disk |
+| `--reunpack` / `--no-reunpack` | Unpack again what is already unpacked |
 | `--unpack` / `--no-unpack`, `--remove-archives` | What happens after the download |
 | `--data-dir DIR`, `--archives-dir DIR` | Where the datasets and the archives go |
 | `--save-answers FILE`, `--answers FILE` | Save the answers and replay them later |
-| `--status`, `--list-remote`, `--dry-run` | Inspect without downloading |
+| `--status`, `--check`, `--list-remote`, `--dry-run` | Inspect without downloading |
 | `--yes` | Skip the final confirmation |
 
 The result is the layout the training scripts expect:
@@ -126,6 +139,9 @@ data/jpegai_training_random_crop/jpegai_training_set512_random_crop_16.txt
 data/jpegai_validation_set/                                         validation images
 data/jpegai_validation_set/jpegai_validation_set_10.txt
 ```
+
+What each archive produced is recorded in `data/.jpegai_datasets.json`, which is what lets a
+later run tell downloaded from downloaded-and-unpacked.
 
 An example of a command line for training you can find in a file `scripts/train.sh`.
 Additional information about setting parameters of training you can find [here](src/train/README.md).

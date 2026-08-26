@@ -68,6 +68,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tarfile
 import time
@@ -95,24 +96,31 @@ DEFAULT_SOURCE = 'iso'
 TRAIN_FULL_DIR = 'jpegai_training'
 TRAIN_CROP_DIR = 'jpegai_training_random_crop'
 VALID_DIR = 'jpegai_validation_set'
+VALID_FULL_DIR = 'jpegai_validation_set_full'
 TRAIN_LIST = 'jpegai_training_set512_random_crop_16.txt'
 VALID_LIST = 'jpegai_validation_set_10.txt'
 
-ARCHIVE_SUFFIXES = ('.zip', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tar.xz')
+ARCHIVE_SUFFIXES = ('.zip', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tar.xz', '.7z')
 CHECKSUM_SUFFIXES = ('.md5', '.sha1', '.sha256')
+# Large archives are published split into volumes: <name>.7z.001, .002 and so on.
+VOLUME_RE = re.compile(r'^(?P<base>.+\.(?:7z|zip|tar|tar\.gz|tgz|tar\.bz2|tar\.xz))'
+                       r'\.(?P<index>\d{2,})$', re.IGNORECASE)
 
 USER_AGENT = 'jpeg-ai-reference-software dataset downloader'
 CHUNK = 1 << 20
 # Rough size of the unpacked content relative to the archives, for the disk space check.
 EXTRACTED_SIZE_FACTOR = 1.2
 
-# Extra training datasets beyond the natural content.  The tokens are the directory names the
-# training lists in cfg/training_list/Q*_training_list.txt refer to, which is what makes an
-# archive recognisable as one of them.
+# The published names say what an archive holds: jpegai_train-natural-full_bundle.7z.001,
+# jpegai_train-natural-cropped_00000-01299_bundle.7z.001, jpegai_train-extra_HF2000.tar,
+# jpegai_valid-natural_cropped_bundle.7z.001.  Separators vary between - and _, so a name is
+# normalised before it is read.
+EXTRA_RE = re.compile(r'extra-([a-z0-9]+)', re.IGNORECASE)
+RANGE_RE = re.compile(r'(\d{5}-\d{5})')
+# Older names, from before the datasets moved to the ISO and ITU mirrors.
 EXTRA_TOKENS = ('scc', 'hf2000', 'phfa500', 'phf200', 'lq7000', 'md300', 'excel300', 'cp50',
                 'imscc')
 PATCH_TOKENS = ('crop', 'patch')
-VALID_TOKENS = ('valid', 'validation')
 TEST_TOKENS = ('test', )
 
 
@@ -131,46 +139,131 @@ class DatasetError(Exception):
 #     test             the test set, which the codec pulls with dvc rather than from here
 #     unknown          could not be classified; offered separately, never selected by default
 class RemoteFile:
-    def __init__(self, name, url, size=None, kind='unknown', group=None):
+    """One file on the mirror: a whole archive, or one volume of a split one."""
+
+    def __init__(self, name, url, size=None):
         self.name = name
         self.url = url
         self.size = size
-        self.kind = kind
-        # Label shown in the questionnaire, e.g. the name of an extra dataset.
-        self.group = group or name
+        self.volume = 0
 
     def __repr__(self):
-        return f'RemoteFile({self.name}, {self.kind}, {self.size})'
+        return f'RemoteFile({self.name}, {self.size})'
+
+
+def normalised_name(name):
+    """Strip the archive suffix and unify the separators, so one pattern reads every name."""
+    stem = os.path.basename(name).lower()
+    stem = re.sub(r'\.(7z|zip|tar|tgz)(\.\w+)*$', '', stem)
+    return re.sub(r'[\s_]+', '-', stem)
 
 
 def classify(name):
     """Work out what an archive holds from its name.
 
-    Returns ``(kind, group)``.  The order of the tests matters: an extra dataset is recognised
-    before the natural content, because an archive such as ``scc7000_patchs2.tar`` names both
-    its dataset and the fact that it holds patches.
+    Returns ``(kind, group, variant)``.  ``group`` labels the archive in the questionnaire --
+    the name of an extra dataset, or the image range of a bundle -- and ``variant`` separates
+    the full-size and cropped forms of the validation set.
     """
-    lowered = name.lower()
-    stem = os.path.basename(lowered)
+    stem = normalised_name(name)
+    image_range = RANGE_RE.search(stem)
+    image_range = image_range.group(1) if image_range else None
 
-    for token in VALID_TOKENS:
-        if token in stem:
-            return 'validation', 'validation set'
+    if 'reference-software' in stem:
+        return 'software', 'reference software', None
+    if 'valid' in stem:
+        # The validation set is published in two forms; a name that says neither is the one
+        # single set the older layout had.
+        if 'crop' in stem or 'patch' in stem:
+            variant = 'cropped'
+        elif 'full' in stem:
+            variant = 'full'
+        else:
+            variant = None
+        label = 'validation set' if variant is None else f'validation set, {variant}'
+        return 'validation', label, variant
+    if 'extra' in stem:
+        match = EXTRA_RE.search(name.replace('_', '-'))
+        return 'extra', match.group(1) if match else stem, None
+    # Older names, from before the move to the ISO and ITU mirrors, name the extra dataset
+    # without saying "extra" -- and scc7000_patchs2.tar also says "patch", so this has to come
+    # before the cropped-content test below.
     for token in EXTRA_TOKENS:
         if token in stem:
-            return 'extra', token
+            return 'extra', token, None
     for token in TEST_TOKENS:
         if token in stem:
-            return 'test', 'test set'
+            return 'test', 'test set', None
+    if 'natural-full' in stem or ('full' in stem and 'crop' not in stem):
+        return 'natural_full', image_range or 'full-size images', None
     if any(token in stem for token in PATCH_TOKENS):
-        return 'natural_patches', 'natural content, patches'
+        return 'natural_patches', image_range or 'cropped patches', None
     if 'train' in stem:
-        return 'natural_full', 'natural content, full-size images'
-    return 'unknown', 'unclassified'
+        return 'natural_full', image_range or 'full-size images', None
+    return 'unknown', 'unclassified', None
+
+
+def split_volume(name):
+    """Split ``<base>.7z.003`` into ``('<base>.7z', 3)``; a plain archive keeps index 0."""
+    match = VOLUME_RE.match(name)
+    if match is None:
+        return name, 0
+    return match.group('base'), int(match.group('index'))
 
 
 def is_archive(name):
-    return name.lower().endswith(ARCHIVE_SUFFIXES)
+    return split_volume(name)[0].lower().endswith(ARCHIVE_SUFFIXES)
+
+
+class ArchiveSet:
+    """One logical archive: a single file, or the volumes a large one is split into."""
+
+    def __init__(self, name, kind, group, variant=None):
+        self.name = name
+        self.kind = kind
+        self.group = group
+        self.variant = variant
+        self.volumes = list()
+
+    @property
+    def size(self):
+        if any(x.size is None for x in self.volumes):
+            return None
+        return sum(x.size for x in self.volumes)
+
+    @property
+    def is_split(self):
+        return len(self.volumes) > 1 or self.volumes[0].name != self.name
+
+    @property
+    def first_volume(self):
+        return self.volumes[0]
+
+    def label(self):
+        count = len(self.volumes)
+        if not self.is_split:
+            return self.name
+        return f'{self.name} ({count} volume{"" if count == 1 else "s"})'
+
+    def __repr__(self):
+        return f'ArchiveSet({self.name}, {self.kind}, {len(self.volumes)} volume(s))'
+
+
+def group_volumes(files):
+    """Gather the volumes of each split archive into one ArchiveSet, keeping listing order."""
+    sets = dict()
+    for remote in files:
+        base, index = split_volume(remote.name)
+        archive = sets.get(base)
+        if archive is None:
+            kind, group, variant = classify(base)
+            archive = ArchiveSet(base, kind, group, variant)
+            sets[base] = archive
+        remote.volume = index
+        archive.volumes.append(remote)
+    for archive in sets.values():
+        archive.volumes.sort(key=lambda x: (x.volume, x.name))
+    return sorted(sets.values(), key=lambda x: x.name)
 
 
 # ######################################################################################################################
@@ -332,11 +425,21 @@ def crawl(base_url, depth=2, use_head=True, verbose=False):
         visited.add(url)
         if verbose:
             print(f'  reading {url}')
-        for href, size in parse_index(fetch_text(url)):
+        try:
+            page = fetch_text(url)
+        except DatasetError as error:
+            if url == base_url:
+                raise
+            # A subdirectory that cannot be read is worth a word, not a failed run.
+            print(f'  warning: skipping {url}: {error}')
+            continue
+        for href, size in parse_index(page):
             absolute = urllib.parse.urljoin(url, href)
             absolute, _ = urllib.parse.urldefrag(absolute)
             if not absolute.startswith(base_url) or absolute in (url, base_url):
                 continue
+            if absolute.endswith('/') and url.startswith(absolute):
+                continue        # a link back up the tree, such as "[To Parent Directory]"
             name = urllib.parse.unquote(
                 os.path.basename(urllib.parse.urlparse(absolute).path.rstrip('/')))
             if not name:
@@ -350,8 +453,7 @@ def crawl(base_url, depth=2, use_head=True, verbose=False):
                 continue
             if not is_archive(name) or absolute in files:
                 continue
-            kind, group = classify(name)
-            files[absolute] = RemoteFile(name, absolute, size, kind, group)
+            files[absolute] = RemoteFile(name, absolute, size)
 
     ans = sorted(files.values(), key=lambda x: x.name)
     if use_head:
@@ -392,6 +494,18 @@ def format_total(files):
     if unknown:
         text += f' plus {unknown} file(s) of unknown size'
     return f'{len(files)} file(s), {text}'
+
+
+def format_total_sets(archives):
+    """Same, counted in whole archives rather than in the volumes they are split into."""
+    known = [x for x in archives if x.size is not None]
+    unknown = len(archives) - len(known)
+    if not known:
+        return f'{len(archives)} archive(s), size unknown'
+    text = format_size(sum(x.size for x in known))
+    if unknown:
+        text += f' plus {unknown} archive(s) of unknown size'
+    return f'{len(archives)} archive(s), {text}'
 
 
 def display_path(path):
@@ -486,24 +600,36 @@ def ask_subset(question, options):
 # ######################################################################################################################
 #  Choosing what to download
 # ######################################################################################################################
-def group_by_kind(files):
+def group_by_kind(archives):
     ans = dict()
-    for remote in files:
-        ans.setdefault(remote.kind, list()).append(remote)
+    for archive in archives:
+        ans.setdefault(archive.kind, list()).append(archive)
     return ans
 
 
-def group_extras(files):
-    """Extra datasets, keyed by the dataset they belong to."""
+def group_by_label(archives):
+    """Archives keyed by the dataset they belong to, keeping the order they were listed in."""
     ans = dict()
-    for remote in files:
-        ans.setdefault(remote.group, list()).append(remote)
+    for archive in archives:
+        ans.setdefault(archive.group, list()).append(archive)
     return ans
 
 
-def select_files(args, files, interactive):
+def describe_group(archives):
+    """How much a dataset adds to the download, and over how many archives and volumes."""
+    volumes = sum(len(x.volumes) for x in archives)
+    if len(archives) == 1:
+        text = format_size(archives[0].size)
+    else:
+        text = format_total_sets(archives)
+    if volumes > len(archives):
+        text += f' in {volumes} volumes'
+    return text
+
+
+def select_files(args, archives, interactive):
     """Work through the questions and return the archives to download."""
-    by_kind = group_by_kind(files)
+    by_kind = group_by_kind(archives)
     selection = list()
 
     options = [('train', 'training set'), ('validation', 'validation set'),
@@ -520,9 +646,9 @@ def select_files(args, files, interactive):
         patches = by_kind.get('natural_patches', list())
         natural_options = list()
         if full:
-            natural_options.append(('full', f'full-size images -- {format_total(full)}'))
+            natural_options.append(('full', f'full-size images -- {describe_group(full)}'))
         if patches:
-            natural_options.append(('patches', f'cropped patches -- {format_total(patches)}'))
+            natural_options.append(('patches', f'cropped patches -- {describe_group(patches)}'))
         natural_options.append(('none', 'skip the natural content'))
 
         natural = args.natural
@@ -542,75 +668,115 @@ def select_files(args, files, interactive):
 
         extras = by_kind.get('extra', list())
         if extras:
-            groups = group_extras(extras)
-            group_options = [(name, f'{name} -- {format_total(group)}')
+            groups = group_by_label(extras)
+            group_options = [(name.lower(), f'{name} -- {describe_group(group)}')
                              for name, group in sorted(groups.items())]
-            everything = format_total(extras)
+            by_key = {name.lower(): group for name, group in groups.items()}
             wanted = args.extras
             if wanted is None:
                 wanted = ask_subset(
-                    f'Extra training datasets ({everything} in total) -- which ones?',
-                    group_options) if interactive else list()
+                    f'Extra training datasets ({describe_group(extras)} in total) -- '
+                    'which ones?', group_options) if interactive else list()
             elif wanted == ['all']:
-                wanted = sorted(groups)
+                wanted = sorted(by_key)
             elif wanted == ['none']:
                 wanted = list()
-            unknown = [x for x in wanted if x not in groups]
+            wanted = [x.lower() for x in wanted]
+            unknown = [x for x in wanted if x not in by_key]
             if unknown:
                 raise DatasetError('Unknown extra dataset(s): {}. Available: {}'.format(
-                    ', '.join(unknown), ', '.join(sorted(groups)) or 'none'))
+                    ', '.join(unknown), ', '.join(sorted(by_key)) or 'none'))
             for name in wanted:
-                selection += groups[name]
+                selection += by_key[name]
 
     if want_valid:
-        validation = by_kind.get('validation', list())
-        if not validation:
-            print('\nThe mirror offers no validation set.')
-        elif interactive and not args.yes:
-            # Question 4: show what the validation set costs and confirm it.
-            print(f'\nValidation set: {format_total(validation)}')
-            for remote in validation:
-                print(f'  {remote.name} -- {format_size(remote.size)}')
-            if ask_yes_no('Download the validation set?', default=True):
-                selection += validation
-        else:
-            selection += validation
+        selection += select_validation(args, by_kind.get('validation', list()), interactive)
+
+    software = by_kind.get('software', list())
+    if software:
+        print('\nnote: the mirror also carries the reference software itself ({}); '
+              'this script only downloads datasets.'.format(describe_group(software)))
 
     leftovers = by_kind.get('unknown', list())
     if leftovers and interactive and args.extras is None:
-        print(f'\n{len(leftovers)} archive(s) could not be classified by name.')
+        print(f'\n{len(leftovers)} archive(s) could not be placed by name.')
         picked = ask_subset('Download any of them?',
-                            [(x.name, f'{x.name} -- {format_size(x.size)}')
+                            [(x.name, f'{x.label()} -- {format_size(x.size)}')
                              for x in leftovers])
         selection += [x for x in leftovers if x.name in picked]
     elif leftovers:
-        print(f'\nnote: ignoring {len(leftovers)} unclassified archive(s); '
+        print(f'\nnote: ignoring {len(leftovers)} archive(s) that could not be placed; '
               'see --list-remote')
 
     # Keep the listing order and drop anything selected twice.
     seen, ans = set(), list()
-    for remote in selection:
-        if remote.url not in seen:
-            seen.add(remote.url)
-            ans.append(remote)
+    for archive in selection:
+        if archive.name not in seen:
+            seen.add(archive.name)
+            ans.append(archive)
     return ans
 
 
-def confirm_plan(args, selection, data_dir, interactive):
-    """Show the summary -- what, how big, where -- and ask to go ahead."""
-    rows = [[x.name, x.kind, format_size(x.size)] for x in selection]
-    print('\nAbout to download:')
-    print(format_table(['archive', 'content', 'size'], rows))
+def select_validation(args, validation, interactive):
+    """Question 4: show what the validation set costs, in each form it is published in."""
+    if not validation:
+        print('\nThe mirror offers no validation set.')
+        return list()
 
-    download = total_size(selection)
-    print(f'\nTotal download: {format_total(selection)}')
+    variants = group_by_label(validation)
+    print(f'\nValidation set: {describe_group(validation)}')
+    for name, group in sorted(variants.items()):
+        print(f'  {name} -- {describe_group(group)}')
+
+    if args.validation is not None:
+        wanted = args.validation
+    elif not interactive or args.yes:
+        wanted = 'cropped' if any(x.variant == 'cropped' for x in validation) else 'all'
+    elif len(variants) < 2:
+        return validation if ask_yes_no('Download the validation set?', default=True) \
+            else list()
+    else:
+        options = list()
+        for variant in ('cropped', 'full'):
+            group = [x for x in validation if x.variant == variant]
+            if group:
+                options.append((variant, f'{variant} -- {describe_group(group)}'))
+        options.append(('all', f'both forms -- {describe_group(validation)}'))
+        options.append(('none', 'skip the validation set'))
+        wanted = ask_choice('Which form of the validation set?', options, default='cropped')
+
+    if wanted == 'none':
+        return list()
+    if wanted == 'all':
+        return validation
+    chosen = [x for x in validation if x.variant == wanted]
+    if not chosen:
+        raise DatasetError(f'The mirror has no "{wanted}" validation set; it offers: '
+                           + ', '.join(sorted({str(x.variant) for x in validation})))
+    return chosen
+
+
+def confirm_plan(args, selection, states, policy, data_dir, interactive):
+    """Show the summary -- what, how big, where -- and ask to go ahead."""
+    by_name = {x.archive.name: x for x in states}
+    rows = [[x.label(), x.kind, format_size(x.size),
+             by_name[x.name].state if x.name in by_name else '-'] for x in selection]
+    print('\nAbout to download:')
+    print(format_table(['archive', 'content', 'size', 'on disk'], rows))
+
+    download = bytes_for_policy(states, policy)
+    content = total_size(selection)
+    print(f'\nTotal download: {format_size(download)}')
+    if download != content:
+        print(f'Chosen datasets: {format_total_sets(selection)}, '
+              'the rest is already on disk')
     if args.unpack:
-        extracted = None if download is None else int(download * EXTRACTED_SIZE_FACTOR)
-        needed = download if download is None else (
+        extracted = None if content is None else int(content * EXTRACTED_SIZE_FACTOR)
+        needed = None if download is None or extracted is None else (
             max(download, extracted + max([x.size or 0 for x in selection], default=0))
             if args.remove_archives else download + extracted)
         print(f'Unpacked content adds about {format_size(extracted)}, '
-              f'so about {format_size(needed)} of disk is needed')
+              f'so about {format_size(needed)} of free disk is needed')
     else:
         needed = download
     print(f'Destination: {display_path(data_dir)}')
@@ -629,22 +795,216 @@ def confirm_plan(args, selection, data_dir, interactive):
 
 
 # ######################################################################################################################
+#  What is already on disk
+# ######################################################################################################################
+# A receipt in the data directory remembers which archive produced which files, so a later run
+# can tell "downloaded" from "downloaded and unpacked" without guessing from what the dataset
+# directories happen to contain.
+RECEIPT_NAME = '.jpegai_datasets.json'
+
+
+def load_receipt(data_dir):
+    path = os.path.join(data_dir, RECEIPT_NAME)
+    if not os.path.isfile(path):
+        return dict()
+    try:
+        with open(path, 'r') as f:
+            receipt = json.load(f)
+    except (ValueError, OSError):
+        return dict()
+    archives = receipt.get('archives')
+    return archives if isinstance(archives, dict) else dict()
+
+
+def save_receipt(data_dir, archives):
+    with open(os.path.join(data_dir, RECEIPT_NAME), 'w') as f:
+        json.dump({'archives': archives}, f, indent=4, sort_keys=True)
+        f.write('\n')
+
+
+class LocalState:
+    """How one archive on the mirror compares with what this machine already has."""
+
+    def __init__(self, archive, archives_dir, unpacked):
+        self.archive = archive
+        self.unpacked = unpacked        # receipt entry, or None
+        self.volumes = list()
+        for remote in archive.volumes:
+            path = os.path.join(archives_dir, remote.name)
+            size = os.path.getsize(path) if os.path.isfile(path) else None
+            self.volumes.append((remote, path, size))
+
+    @property
+    def local_size(self):
+        sizes = [size for _, _, size in self.volumes if size is not None]
+        return sum(sizes) if sizes else None
+
+    @property
+    def state(self):
+        states = [volume_state(remote, size) for remote, _, size in self.volumes]
+        for name in ('oversized', 'partial', 'missing', 'present'):
+            if name in states:
+                # A split archive is only complete when every volume is.
+                return 'partial' if (name == 'missing' and any(
+                    x != 'missing' for x in states)) else name
+        return 'complete'
+
+    @property
+    def is_complete(self):
+        return self.state in ('complete', 'present')
+
+    @property
+    def unpacked_matches(self):
+        """True when the unpacked content came from the archive the mirror offers now."""
+        if not self.unpacked:
+            return False
+        recorded = self.unpacked.get('size')
+        return self.archive.size is None or recorded is None or recorded == self.archive.size
+
+    def missing_bytes(self):
+        """Bytes still to fetch to finish this archive; None if a size is unknown."""
+        total = 0
+        for remote, _, size in self.volumes:
+            if remote.size is None:
+                return None
+            if size is None:
+                total += remote.size
+            elif size < remote.size:
+                total += remote.size - size
+            elif size > remote.size:
+                total += remote.size
+        return total
+
+    def describe_unpacked(self):
+        if not self.unpacked:
+            return 'no'
+        when = str(self.unpacked.get('unpacked_at', ''))[:10]
+        text = '{} file(s)'.format(self.unpacked.get('files', '?'))
+        if when:
+            text += f' on {when}'
+        return text if self.unpacked_matches else f'{text}, from an older archive'
+
+
+def volume_state(remote, local_size):
+    if local_size is None:
+        return 'missing'
+    if remote.size is None:
+        return 'present'
+    if local_size < remote.size:
+        return 'partial'
+    if local_size > remote.size:
+        return 'oversized'
+    return 'complete'
+
+
+def inspect_local(archives, archives_dir, receipt):
+    """Compare every chosen archive with the copy and the unpacked content on disk."""
+    return [LocalState(x, archives_dir, receipt.get(x.name)) for x in archives]
+
+
+def print_existing(states):
+    rows = [[x.archive.label(),
+             format_size(x.local_size) if x.local_size is not None else '-',
+             format_size(x.archive.size), x.state, x.describe_unpacked()] for x in states]
+    print(format_table(['archive', 'on disk', 'on mirror', 'state', 'unpacked'], rows))
+
+
+def bytes_for_policy(states, policy):
+    """How much a policy actually downloads; None as soon as one size is unknown."""
+    total = 0
+    for state in states:
+        if policy == 'redownload':
+            needed = state.archive.size
+        elif policy == 'skip':
+            needed = state.archive.size if state.state == 'missing' else 0
+        else:
+            needed = state.missing_bytes()
+        if needed is None:
+            return None
+        total += needed
+    return total
+
+
+def ask_existing_policy(args, states, interactive):
+    """Something is already here: finish it, fetch it again, or leave it alone?"""
+    present = [x for x in states if x.state != 'missing']
+    if not present:
+        return args.existing or 'resume'
+
+    print('\nSome of what was chosen is already on disk:')
+    print_existing(present)
+
+    partial = [x for x in present if x.state in ('partial', 'oversized')]
+    unpacked = [x for x in present if x.unpacked]
+    for state in partial:
+        print(f'  {state.archive.name} is incomplete, {format_size(state.missing_bytes())} '
+              'still to download')
+    if unpacked:
+        print(f'  {len(unpacked)} archive(s) have already been unpacked')
+
+    if args.existing is not None:
+        return args.existing
+    if not interactive:
+        return 'resume'
+
+    options = [
+        ('resume', 'finish what is incomplete, keep what is complete -- downloads {}'.format(
+            format_size(bytes_for_policy(states, 'resume')))),
+        ('redownload', 'download all of it again -- downloads {}'.format(
+            format_size(bytes_for_policy(states, 'redownload')))),
+        ('skip', 'leave what is on disk alone, fetch only what is missing entirely -- '
+                 'downloads {}'.format(format_size(bytes_for_policy(states, 'skip')))),
+    ]
+    return ask_choice('What should be done with what is already there?', options,
+                      default='resume')
+
+
+def ask_reunpack(args, states, interactive):
+    """Archives whose content is already unpacked: unpack them again or leave them?"""
+    done = [x for x in states if x.unpacked and x.unpacked_matches]
+    if not done or not args.unpack:
+        return args.reunpack if args.reunpack is not None else False
+    if args.reunpack is not None:
+        return args.reunpack
+    if not interactive:
+        return False
+    print(f'\n{len(done)} of the chosen archive(s) have already been unpacked:')
+    for state in done:
+        into = state.unpacked.get('into', '?')
+        print(f'  {state.archive.name} -> {into} ({state.describe_unpacked()})')
+    return ask_yes_no('Unpack them again?', default=False)
+
+
+# ######################################################################################################################
 #  Downloading
 # ######################################################################################################################
-def download_file(remote, dest_dir, retries=3, quiet=False):
-    """Fetch one archive, resuming a partial copy; returns 'complete', 'resumed' or 'fresh'."""
+def download_file(remote, dest_dir, retries=3, quiet=False, policy='resume'):
+    """Fetch one file, following the policy for a copy that is already there.
+
+    ``resume`` finishes a partial file with a Range request and leaves a complete one alone,
+    ``redownload`` fetches it again from the start, and ``skip`` keeps whatever is on disk.
+    """
     path = os.path.join(dest_dir, remote.name)
     have = os.path.getsize(path) if os.path.isfile(path) else 0
+
+    if have and policy == 'skip':
+        print(f'  {remote.name}: left as it is ({format_size(have)})')
+        return 'skipped'
+    if have and policy == 'redownload':
+        os.remove(path)
+        have = 0
 
     if remote.size is not None:
         if have == remote.size:
             print(f'  {remote.name}: already complete ({format_size(have)})')
             return 'complete'
         if have > remote.size:
-            print(f'  {remote.name}: local copy is larger than the server one, downloading '
-                  'again')
+            print(f'  {remote.name}: local copy is larger than the one on the mirror, '
+                  'downloading it again')
             os.remove(path)
             have = 0
+        elif have:
+            print(f'  {remote.name}: resuming, {format_size(remote.size - have)} to go')
 
     last_error = None
     for attempt in range(1, retries + 1):
@@ -744,19 +1104,22 @@ class ExtractPlan:
         self.keep = keep
 
 
-def plan_for(remote):
-    if remote.kind == 'natural_full':
+def plan_for(archive):
+    if archive.kind == 'natural_full':
         return ExtractPlan(TRAIN_FULL_DIR, True, IMAGE_SUFFIXES)
-    if remote.kind == 'natural_patches':
+    if archive.kind == 'natural_patches':
         return ExtractPlan(TRAIN_CROP_DIR, True, IMAGE_SUFFIXES)
-    if remote.kind == 'extra':
+    if archive.kind == 'extra':
         # Keep the archive's own directories: the training lists in cfg/training_list refer to
         # the extra datasets by directory, for example jpegai_training_7000scc/<image>.png.
         return ExtractPlan(TRAIN_CROP_DIR, False, IMAGE_SUFFIXES)
-    if remote.kind == 'validation':
-        # The validation archive ships its own file list next to the images.
-        return ExtractPlan(VALID_DIR, True, IMAGE_SUFFIXES + ('.txt', ))
-    stem = re.sub(r'\.(zip|tar|tgz|tar\.gz|tar\.bz2|tar\.xz)$', '', remote.name, flags=re.I)
+    if archive.kind == 'validation':
+        # The cropped form is the one scripts/train.sh reads; the full-size one is kept beside
+        # it.  Both may ship their own file list next to the images.
+        directory = VALID_FULL_DIR if archive.variant == 'full' else VALID_DIR
+        return ExtractPlan(directory, True, IMAGE_SUFFIXES + ('.txt', ))
+    stem = re.sub(r'\.(zip|tar|7z|tgz|tar\.gz|tar\.bz2|tar\.xz)$', '', archive.name,
+                  flags=re.I)
     return ExtractPlan(stem, False, IMAGE_SUFFIXES + ('.txt', ))
 
 
@@ -770,9 +1133,62 @@ def safe_member_path(name, strip=0):
     return '/'.join(parts) if parts else None
 
 
+def sevenzip_tool():
+    """The 7-Zip command line, under any of the names it is installed as."""
+    for name in ('7z', '7za', '7zz', '7zr'):
+        if shutil.which(name) is not None:
+            return name
+    return None
+
+
+def require_sevenzip(archives):
+    """7-Zip bundles cannot be unpacked with the standard library; check before downloading."""
+    if not any(x.name.lower().endswith('.7z') for x in archives):
+        return
+    if sevenzip_tool() is None:
+        raise DatasetError(
+            'The datasets are published as 7-Zip bundles and no 7z command was found. '
+            'Install it with "sudo apt install p7zip-full", or pass --no-unpack to download '
+            'the archives now and unpack them later.')
+
+
+def count_images(root):
+    total = 0
+    for _, _, files in os.walk(root):
+        total += sum(1 for x in files if x.lower().endswith(IMAGE_SUFFIXES))
+    return total
+
+
+def extract_with_sevenzip(archive_path, dest_dir, plan, quiet=False):
+    """Unpack a 7-Zip archive, following on to its later volumes on its own."""
+    tool = sevenzip_tool()
+    if tool is None:
+        raise DatasetError('No 7z command found; install it with '
+                           '"sudo apt install p7zip-full".')
+    before = count_images(dest_dir)
+    # "e" drops the paths, "x" keeps them; the masks keep everything else out of the dataset.
+    argv = [tool, 'e' if plan.flatten else 'x', '-y', '-r', f'-o{dest_dir}', archive_path]
+    argv += [f'*{suffix}' for suffix in plan.keep]
+    process = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             universal_newlines=True)
+    if process.returncode != 0:
+        raise DatasetError('{} failed on {}:\n{}'.format(
+            tool, os.path.basename(archive_path), process.stdout.strip()[-2000:]))
+    written = count_images(dest_dir) - before
+    roots = set(os.listdir(dest_dir)) if not plan.flatten else set()
+    if not quiet:
+        print(f'  {os.path.basename(archive_path)} -> {display_path(dest_dir)}: '
+              f'{written} file(s)')
+    return written, roots
+
+
 def extract_archive(archive_path, dest_dir, plan, strip=0, quiet=False):
     """Unpack the wanted members of one archive; returns (files written, top-level names)."""
     os.makedirs(dest_dir, exist_ok=True)
+    base = split_volume(os.path.basename(archive_path))[0].lower()
+    if base.endswith('.7z'):
+        return extract_with_sevenzip(archive_path, dest_dir, plan, quiet=quiet)
+
     written, roots = 0, set()
 
     def target_for(member_name):
@@ -785,7 +1201,7 @@ def extract_archive(archive_path, dest_dir, plan, strip=0, quiet=False):
         roots.add(relative.split('/')[0])
         return os.path.join(dest_dir, *relative.split('/'))
 
-    if archive_path.lower().endswith('.zip'):
+    if base.endswith('.zip'):
         with zipfile.ZipFile(archive_path) as archive:
             for info in archive.infolist():
                 if info.is_dir():
@@ -845,7 +1261,8 @@ def write_list_file(path, names):
 def generate_lists(data_dir, touched_dirs, force=False):
     """Write the file lists the training scripts read, for the directories that changed."""
     made = list()
-    for directory, list_name in ((TRAIN_CROP_DIR, TRAIN_LIST), (VALID_DIR, VALID_LIST)):
+    for directory, list_name in ((TRAIN_CROP_DIR, TRAIN_LIST), (VALID_DIR, VALID_LIST),
+                                (VALID_FULL_DIR, VALID_LIST)):
         if directory not in touched_dirs:
             continue
         root = os.path.join(data_dir, directory)
@@ -853,7 +1270,7 @@ def generate_lists(data_dir, touched_dirs, force=False):
             continue
         list_path = os.path.join(root, list_name)
         # The validation archive ships its own list; only step in when it is absent.
-        if directory == VALID_DIR and os.path.isfile(list_path) and not force:
+        if list_name == VALID_LIST and os.path.isfile(list_path) and not force:
             continue
         names = collect_images(root)
         write_list_file(list_path, names)
@@ -865,9 +1282,10 @@ def generate_lists(data_dir, touched_dirs, force=False):
 #  Status
 # ######################################################################################################################
 def print_status(data_dir, archives_dir):
+    """Report what is on disk: unpacked datasets, archives, and what came from where."""
     rows = list()
     for directory, list_name in ((TRAIN_FULL_DIR, None), (TRAIN_CROP_DIR, TRAIN_LIST),
-                                 (VALID_DIR, VALID_LIST)):
+                                 (VALID_DIR, VALID_LIST), (VALID_FULL_DIR, VALID_LIST)):
         root = os.path.join(data_dir, directory)
         if not os.path.isdir(root):
             rows.append([directory, 'absent', '-'])
@@ -876,24 +1294,44 @@ def print_status(data_dir, archives_dir):
         if list_name is not None and os.path.isfile(os.path.join(root, list_name)):
             with open(os.path.join(root, list_name), 'r') as f:
                 listed = str(sum(1 for line in f if line.strip()))
-        rows.append([directory, str(len(collect_images(root))), listed])
+        rows.append([directory, str(count_images(root)), listed])
     print(f'Datasets in {display_path(data_dir)}:')
     print(format_table(['directory', 'images', 'entries in list'], rows))
 
+    receipt = load_receipt(data_dir)
+    if receipt:
+        rows = [[name, entry.get('into', '?'), str(entry.get('files', '?')),
+                 str(entry.get('unpacked_at', ''))[:10], format_size(entry.get('size'))]
+                for name, entry in sorted(receipt.items())]
+        print('\nUnpacked from:')
+        print(format_table(['archive', 'into', 'files', 'when', 'archive size'], rows))
+
     if os.path.isdir(archives_dir):
-        archives = sorted(x for x in os.listdir(archives_dir) if is_archive(x))
-        if archives:
-            rows = [[x, classify(x)[0], format_size(os.path.getsize(
-                os.path.join(archives_dir, x)))] for x in archives]
+        names = sorted(x for x in os.listdir(archives_dir) if is_archive(x))
+        if names:
+            rows = list()
+            for base, volumes in sorted(group_local_volumes(names).items()):
+                size = sum(os.path.getsize(os.path.join(archives_dir, x)) for x in volumes)
+                label = base if len(volumes) == 1 else f'{base} ({len(volumes)} volumes)'
+                rows.append([label, classify(base)[0], format_size(size)])
             print(f'\nArchives in {display_path(archives_dir)}:')
             print(format_table(['archive', 'content', 'size'], rows))
+
+
+def group_local_volumes(names):
+    """Group the file names of split archives back into one entry per archive."""
+    ans = dict()
+    for name in names:
+        ans.setdefault(split_volume(name)[0], list()).append(name)
+    return ans
 
 
 # ######################################################################################################################
 #  Command line
 # ######################################################################################################################
-ANSWER_KEYS = ('source', 'base_url', 'datasets', 'natural', 'extras', 'unpack',
-               'remove_archives', 'data_dir', 'archives_dir')
+ANSWER_KEYS = ('source', 'base_url', 'datasets', 'natural', 'validation', 'extras',
+               'unpack', 'remove_archives', 'existing', 'reunpack', 'data_dir',
+               'archives_dir')
 
 
 def parse_extras(text):
@@ -959,6 +1397,8 @@ def build_parser():
     asked.add_argument('--natural', choices=['full', 'patches', 'none'], default=None,
                        help='Form of the natural training content: full-size images or '
                             'cropped patches')
+    asked.add_argument('--validation', choices=['cropped', 'full', 'all', 'none'],
+                       default=None, help='Form of the validation set to download')
     asked.add_argument('--extras', type=parse_extras, default=None,
                        metavar='all|none|NAME,NAME',
                        help='Extra training datasets (screen content, high frequency, ...)')
@@ -970,6 +1410,13 @@ def build_parser():
                        default=None, help='Delete each archive once it has been unpacked')
     asked.add_argument('--keep-archives', dest='remove_archives', action='store_false',
                        help='Keep the archives after unpacking')
+    asked.add_argument('--existing', choices=['resume', 'redownload', 'skip'], default=None,
+                       help='What to do with archives that are already on disk: finish the '
+                            'incomplete ones, fetch everything again, or leave them alone')
+    asked.add_argument('--reunpack', dest='reunpack', action='store_true', default=None,
+                       help='Unpack archives whose content is already unpacked')
+    asked.add_argument('--no-reunpack', dest='reunpack', action='store_false',
+                       help='Leave archives that are already unpacked alone')
 
     where = parser.add_argument_group('locations')
     where.add_argument('--data-dir', dest='data_dir', default=None,
@@ -991,6 +1438,10 @@ def build_parser():
                      help='Do not ask for the final confirmation')
     run.add_argument('--status', action='store_true',
                      help='Report what is already on disk and exit, without connecting')
+    run.add_argument('--check', action='store_true',
+                     help='Compare everything the mirror offers with what is on disk, then '
+                          'exit: what is complete, what is short and by how much, what is '
+                          'already unpacked')
     run.add_argument('--list-remote', dest='list_remote', action='store_true',
                      help='Print the archives the mirror offers, and how each was classified')
     run.add_argument('--dry-run', dest='dry_run', action='store_true',
@@ -1023,7 +1474,8 @@ def main(argv=None):
         return print_status(data_dir, archives_dir) or 0
 
     interactive = sys.stdin.isatty()
-    if not interactive and not args.list_remote and args.datasets is None and not args.yes:
+    if not interactive and not (args.list_remote or args.check) and args.datasets is None \
+            and not args.yes:
         raise DatasetError(
             'There is no terminal to ask on. Pass the answers as options '
             '(--source, --datasets, --natural, --extras), use --answers FILE, or pass --yes '
@@ -1033,18 +1485,28 @@ def main(argv=None):
     print(f'\nReading the catalogue from {base_url}')
     files, checksums = crawl(base_url, depth=args.depth, use_head=args.use_head,
                              verbose=args.verbose)
-    if not files:
+    archives = group_volumes(files)
+    if not archives:
         raise DatasetError(f'No archives found under {base_url}. Check the address, or point '
                            '--base-url at the right directory and raise --depth.')
-    print(f'Found {format_total(files)}')
+    print(f'Found {format_total_sets(archives)} in {len(files)} file(s)')
+    receipt = load_receipt(data_dir)
 
     if args.list_remote:
-        rows = [[x.name, x.kind, x.group, format_size(x.size)] for x in files]
+        rows = [[x.label(), x.kind, x.group, format_size(x.size)] for x in archives]
         print()
         print(format_table(['archive', 'content', 'dataset', 'size'], rows))
         return 0
 
-    selection = select_files(args, files, interactive)
+    if args.check:
+        # Compare everything the mirror offers with what is already here, and stop.
+        print()
+        print_existing(inspect_local(archives, archives_dir, receipt))
+        print(f'\nArchives in {display_path(archives_dir)}, '
+              f'datasets in {display_path(data_dir)}')
+        return 0
+
+    selection = select_files(args, archives, interactive)
     if not selection:
         print('\nNothing selected, nothing to do.')
         return 0
@@ -1052,12 +1514,19 @@ def main(argv=None):
     if args.unpack is None:
         args.unpack = ask_yes_no('\nUnpack the archives after downloading?',
                                  default=True) if interactive else True
+    if args.unpack:
+        require_sevenzip(selection)
     if args.remove_archives is None:
         args.remove_archives = ask_yes_no('Delete each archive once it is unpacked?',
                                           default=False) \
             if (interactive and args.unpack) else False
 
-    if not confirm_plan(args, selection, data_dir, interactive):
+    # What is already downloaded or unpacked, and what to do about it.
+    states = inspect_local(selection, archives_dir, receipt)
+    policy = ask_existing_policy(args, states, interactive)
+    reunpack = ask_reunpack(args, states, interactive)
+
+    if not confirm_plan(args, selection, states, policy, data_dir, interactive):
         print('Cancelled.')
         return 1
     if args.save_answers:
@@ -1067,31 +1536,52 @@ def main(argv=None):
         return 0
 
     os.makedirs(archives_dir, exist_ok=True)
+    os.makedirs(data_dir, exist_ok=True)
     print('\nDownloading:')
-    for remote in selection:
-        state = download_file(remote, archives_dir, retries=max(1, args.retries),
-                              quiet=args.quiet)
-        checksum_url = checksums.get(remote.name)
-        if args.verify_checksums and checksum_url and state != 'complete':
-            if verify_checksum(os.path.join(archives_dir, remote.name), checksum_url,
-                               quiet=args.quiet) is False:
-                raise DatasetError(f'{remote.name} does not match its published checksum; '
-                                   'delete it and download again.')
+    for state in states:
+        for remote, _, _ in state.volumes:
+            outcome = download_file(remote, archives_dir, retries=max(1, args.retries),
+                                    quiet=args.quiet, policy=policy)
+            checksum_url = checksums.get(remote.name)
+            if args.verify_checksums and checksum_url and outcome in ('fresh', 'resumed'):
+                if verify_checksum(os.path.join(archives_dir, remote.name), checksum_url,
+                                   quiet=args.quiet) is False:
+                    raise DatasetError(f'{remote.name} does not match its published '
+                                       'checksum; delete it and download again.')
 
     if args.unpack:
         print('\nUnpacking:')
         touched, created = set(), set()
-        for remote in selection:
-            plan = plan_for(remote)
+        for state in inspect_local(selection, archives_dir, receipt):
+            archive = state.archive
+            if not state.is_complete:
+                print(f'  {archive.name}: incomplete, not unpacked')
+                continue
+            if state.unpacked and state.unpacked_matches and not reunpack:
+                print(f'  {archive.name}: already unpacked, left as it is')
+                touched.add(plan_for(archive).directory)
+                continue
+            plan = plan_for(archive)
             dest = os.path.join(data_dir, plan.directory)
-            _, roots = extract_archive(os.path.join(archives_dir, remote.name), dest, plan,
-                                       strip=args.strip, quiet=args.quiet)
+            written, roots = extract_archive(
+                os.path.join(archives_dir, archive.first_volume.name), dest, plan,
+                strip=args.strip, quiet=args.quiet)
             touched.add(plan.directory)
+            receipt[archive.name] = {
+                'into': plan.directory,
+                'files': written,
+                'size': archive.size,
+                'volumes': len(archive.volumes),
+                'unpacked_at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+            }
+            save_receipt(data_dir, receipt)
             if not plan.flatten:
                 created |= {(plan.directory, x) for x in roots
                             if not x.lower().endswith(IMAGE_SUFFIXES)}
             if args.remove_archives:
-                os.remove(os.path.join(archives_dir, remote.name))
+                for remote, path, _ in state.volumes:
+                    if os.path.isfile(path):
+                        os.remove(path)
         if created:
             print('\nDirectories created inside the datasets (compare them with the paths in '
                   'cfg/training_list/Q*_training_list.txt):')

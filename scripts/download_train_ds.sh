@@ -41,9 +41,10 @@
 #
 #     ./scripts/download_train_ds.sh                       # ask
 #     ./scripts/download_train_ds.sh --status              # what is already on disk
+#     ./scripts/download_train_ds.sh --check               # compare that with the mirror
 #     ./scripts/download_train_ds.sh --list-remote         # what the mirror offers
 #     ./scripts/download_train_ds.sh --source itu --datasets both \
-#             --natural patches --extras all --yes
+#             --natural patches --extras all --existing resume --yes
 #
 # The script only uses the Python standard library, so no conda environment is needed.
 
