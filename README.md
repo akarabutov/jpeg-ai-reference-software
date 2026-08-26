@@ -78,33 +78,50 @@ You may find slides with SW design [here](docs/ppt/VM.pptx).
 
 ## Training dataset
 
-The training and validation datasets live on the JPEG AI sFTP server; the account password is
-published in the ISO document that `scripts/download_train_ds.py --help` links to. Download and
-unpack everything with:
+The training and validation datasets are published by ISO and by ITU. Run
 
 ```
 make download_train_ds
 ```
 
-The datasets are tens of gigabytes, so transfers resume: running the command again continues a
-partial download instead of starting over, and archives that are already complete are skipped.
-Options can be passed either to `scripts/download_train_ds.sh` or to the Python script directly:
+and the script asks what is needed, showing how much each choice downloads:
+
+1. which mirror to use — ISO (`standards.iso.org`) or ITU (`www.itu.int`);
+2. which datasets — training, validation or both;
+3. for the training set, whether the natural content is wanted as full-size images or as
+   cropped patches, and which of the extra datasets (screen content, high frequency, ...)
+   to add;
+4. for the validation set, a confirmation of its size;
+
+followed by whether to unpack the archives, whether to delete them afterwards, and a summary
+with the total download, the disk space needed and the destination.
+
+The catalogue is read from the mirror itself — the script walks the published directory index
+and takes the sizes from it — so nothing is hard-coded and a renamed or added archive is picked
+up automatically. `--list-remote` prints what a mirror offers and how each archive was
+classified. Downloads resume, so a run that was interrupted can simply be started again.
+
+Every answer also has an option, which makes the same run repeatable without questions:
 
 | Option | Purpose |
 | --- | --- |
-| `--parts train scc validation` | Fetch only some of the datasets |
-| `--status` | Report what is already downloaded and unpacked, without connecting |
-| `--dry-run` | Print the download and unpack plan, then exit |
-| `--skip-download` / `--skip-extract` | Unpack the archives already on disk / download only |
-| `--remove-archives` | Delete each archive once it has been unpacked |
-| `--password-file FILE` | Read the password from a file instead of prompting; the environment variable `JPEG_AI_SFTP_PASSWORD` works too |
-| `--identity KEY` | Authenticate with an ssh key instead of a password |
-| `--refresh` | Take the archive list from the server instead of the built-in one |
+| `--source {iso,itu}` | Mirror to download from |
+| `--datasets {train,validation,both}` | Which datasets are needed |
+| `--natural {full,patches,none}` | Full-size natural images or cropped patches |
+| `--extras all\|none\|NAME,NAME` | Extra training datasets |
+| `--unpack` / `--no-unpack`, `--remove-archives` | What happens after the download |
+| `--data-dir DIR`, `--archives-dir DIR` | Where the datasets and the archives go |
+| `--save-answers FILE`, `--answers FILE` | Save the answers and replay them later |
+| `--status`, `--list-remote`, `--dry-run` | Inspect without downloading |
+| `--yes` | Skip the final confirmation |
 
 The result is the layout the training scripts expect:
 
 ```
-data/jpegai_training_random_crop/                                   training patches
+data/jpegai_training/                                               full-size natural images
+data/jpegai_training_random_crop/                                   training patches, with each
+                                                                    extra dataset in its own
+                                                                    subdirectory
 data/jpegai_training_random_crop/jpegai_training_set512_random_crop_16.txt
 data/jpegai_validation_set/                                         validation images
 data/jpegai_validation_set/jpegai_validation_set_10.txt

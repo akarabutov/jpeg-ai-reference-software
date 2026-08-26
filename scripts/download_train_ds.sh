@@ -32,15 +32,18 @@
 #  THE POSSIBILITY OF SUCH DAMAGE.
 
 
-# Downloads and unpacks the JPEG AI training and validation datasets.
+# Downloads the JPEG AI training and validation datasets.
 #
-# The work is done by download_train_ds.py, which resumes interrupted transfers, verifies the
-# downloaded archives against the server and writes the file lists scripts/train.sh reads.
-# This wrapper keeps `make download_train_ds` working; every option of the Python script can
-# be passed through, for example:
+# The work is done by download_train_ds.py, which asks what is needed -- which mirror, which
+# datasets, full-size images or patches, which extra datasets -- and shows the download size
+# of each choice before starting. Every answer also has an option, so a run can be repeated
+# unattended:
 #
-#     ./scripts/download_train_ds.sh --parts train
-#     ./scripts/download_train_ds.sh --status
+#     ./scripts/download_train_ds.sh                       # ask
+#     ./scripts/download_train_ds.sh --status              # what is already on disk
+#     ./scripts/download_train_ds.sh --list-remote         # what the mirror offers
+#     ./scripts/download_train_ds.sh --source itu --datasets both \
+#             --natural patches --extras all --yes
 #
 # The script only uses the Python standard library, so no conda environment is needed.
 
