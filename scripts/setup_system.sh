@@ -36,3 +36,5 @@ sudo apt install doxygen=1.8.13-10
 sudo apt install graphviz=2.40.1-2
 sudo apt install python3-dev
 sudo apt install git-lfs
+# 7-Zip: the training datasets are published as split .7z bundles
+sudo apt install p7zip-full

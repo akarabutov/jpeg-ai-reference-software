@@ -47,13 +47,13 @@ flowchart TB
 
 | Target | Runs | Purpose |
 | --- | --- | --- |
-| `make setup_system` | `sudo scripts/setup_system.sh` | `apt install doxygen 1.8.13, graphviz 2.40.1, python3-dev, git-lfs` |
+| `make setup_system` | `sudo scripts/setup_system.sh` | `apt install doxygen 1.8.13, graphviz 2.40.1, python3-dev, git-lfs, p7zip-full` |
 | `make setup_env` | `scripts/setup_env.sh` | Create conda env `jpeg_ai_vm` (Python 3.7), `pip install -r requirements.txt`, `pre-commit install`, build C++ libs |
 | `make configure` | both of the above | One-shot machine setup |
 | `make build_test_libs` | `scripts/build_test_libs.sh` → `build_ec_lib.sh` | Build the `mans` and `direct` entropy-coding extensions |
 | `make download_test_ds` | `scripts/download_test_ds.sh` | `dvc pull data/test/*.dvc` |
 | `make download_models` | `scripts/download_models.sh` | `dvc pull models/*/*.dvc` |
-| `make download_train_ds` | `scripts/download_train_ds.sh` | Pull the training set |
+| `make download_train_ds` | `scripts/download_train_ds.sh` → `download_train_ds.py` | Ask which datasets are needed, then download and unpack them from the ISO or ITU mirror |
 | `make download_dvc_cache` | `scripts/sFTP_mirror/download_cache.sh` | Mirror the DVC cache from the upstream sFTP |
 | `make test` | `python -m src.reco.scripts.eval --coding_type enc_dec --out_dir results/test` | The standard encode+decode+compare run over the test set |
 | `make unittest` | `CUDA_VISIBLE_DEVICES="-1" python -m unittest -v` | Unit tests, CPU only |
@@ -65,6 +65,58 @@ flowchart TB
 | `make export_models` | `scripts/export_models.sh` | ONNX + CSV export, reorganised into the standard's layout |
 | `make build_docker` / `make run_docker` | `docker build/run` | Image `diveraak/jpeg_ai:latest` |
 | `make all` | configure → build → download → test | Everything from scratch |
+
+### Dataset download
+
+```bash
+python scripts/download_train_ds.py                    # ask what is needed
+python scripts/download_train_ds.py --source {iso,itu} --datasets {train,validation,both} \
+       --natural {full,patches,none} --validation {cropped,full,all,none} \
+       --extras all|none|NAME,NAME [--existing {resume,redownload,skip}]
+       [--unpack|--no-unpack] [--reunpack|--no-reunpack] [--remove-archives]
+       [--data-dir DIR] [--archives-dir DIR] [--yes] [--answers FILE] [--save-answers FILE]
+       [--status] [--check] [--list-remote] [--dry-run] [--base-url URL] [--depth N]
+       [--strip N] [--retries N] [--no-head] [--no-verify-checksums] [--no-space-check]
+       [--force-lists]
+```
+
+Run bare, it is a questionnaire: mirror, datasets, the form of the natural training content
+(full-size images or cropped patches), which extra datasets to add, which form of the
+validation set, then whether to unpack and whether to keep the archives — each answer showing
+what it adds to the download.
+
+Before the final summary it looks at what is already here. `inspect_local()` compares every
+chosen archive, volume by volume, with the copy on disk and with the receipt in
+`data/.jpegai_datasets.json` that records what each archive unpacked into, so a run can tell
+complete from short from already-unpacked. The three ways out — finish the incomplete ones,
+fetch everything again, leave what is there alone — are offered with the bytes each would
+transfer (`bytes_for_policy()`), and archives whose content is already unpacked are only
+unpacked again on request. `--check` prints that comparison for everything the mirror offers
+and exits; `--status` reports the local side alone, without connecting.
+
+The catalogue is read from the mirror. `crawl()` walks the mirror's published directory index,
+`group_volumes()` gathers split bundles (`...bundle.7z.001`, `.002`, …) back into one logical
+archive, and `classify()` reads each name: `jpegai_train-natural-full_*`,
+`jpegai_train-natural-cropped_<range>_*`, `jpegai_train-extra_<NAME>_*`,
+`jpegai_valid-natural-full_*` and `jpegai_valid-natural_cropped_*`, falling back to the names
+used before the datasets moved to these mirrors. The reference software published alongside
+them is recognised and left alone, and anything that cannot be placed is offered separately
+rather than downloaded silently; `--list-remote` shows the whole classification. Sizes come
+from the index — `IndexParser` rebuilds the rows of an Apache or IIS listing so a size stays
+with its own file — and are confirmed with a HEAD request. A mirror that serves the files but
+no listing falls back to `KNOWN_CATALOGUE`, the names and sizes published as `v2026_01` and
+identical on both mirrors; each is probed with HEAD first, so a catalogue that has moved on
+cannot invent files that are not there.
+
+Transfers resume with a Range request, are retried, and are checked against the published
+`.md5`/`.sha256` when the mirror has one. Unpacking uses `zipfile`/`tarfile` for `.zip` and
+`.tar`, and the `7z` command for the split bundles — its absence is reported before the
+download starts, not after it. Only images are kept: full-size natural content flattened into
+`data/jpegai_training/`, patches into `data/jpegai_training_random_crop/`, each extra dataset
+keeping its own directory underneath it, the cropped validation set into
+`data/jpegai_validation_set/` and the full-size one into `data/jpegai_validation_set_full/`.
+The training file list is then regenerated by walking the directory, which covers both the flat
+patches and the nested extras.
 
 ## 3. The codec
 
