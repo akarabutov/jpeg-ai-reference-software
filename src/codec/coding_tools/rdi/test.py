@@ -38,7 +38,6 @@ import sys
 import torch
 import numpy as np
 import json
-from typing import List
 import tempfile
 import subprocess
 from src.codec.common import Image
@@ -48,11 +47,6 @@ class TestRecoTask(unittest.TestCase):
     def init_images(self):
         self.path_in = 'data/test'
         self.imgs = ['00030_TE_560x888_8bit_sRGB.png']
-        self.dvc_pull([os.path.join(self.path_in, img) for img in self.imgs])
-
-    def dvc_pull(self, file_list: List[str]) -> int:
-        cmd = [sys.executable, '-m', 'dvc', 'pull'] + [f'{x}.dvc' for x in file_list]
-        os.system(' '.join(cmd) + " > /dev/null 2>&1")
 
     # Test
     def test_rdi(self):

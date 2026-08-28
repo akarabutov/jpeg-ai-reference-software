@@ -204,7 +204,7 @@ sequenceDiagram
     Coder->>CE: build_models_recursively()
     CE->>Tools: construct nn.Modules
     Coder->>CE: load_models_recursively(downloader)
-    CE->>Tools: fetch/checkout via DVC, load state_dict
+    CE->>Tools: resolve paths, load state_dict
 ```
 
 [12 — Parameter resolution](12-parameter-resolution.md) covers this machinery in full: how a

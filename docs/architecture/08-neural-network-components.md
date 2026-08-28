@@ -255,11 +255,10 @@ Only HOP uses `CAB` and `TAM`. This is the main reason HOP is the "high" operati
 decoder to switch synthesis transform: it tears down the current network, resolves the checkpoint
 for the new `decoder_id`, and reloads.
 
-`Downloader` (`utils/downloader.py`) locates each model directory, runs `dvc fetch` followed by
-`dvc checkout -f` on its `.dvc` pointers — DVC is what verifies the content hashes — and then
-resolves individual file paths. A model directory with no `.dvc` files, or an unknown model name,
-exits immediately; a missing individual file is fatal only when `critical_for_file_absence` is
-set (it is, unless `--skip_loading_error` was passed).
+`Downloader` (`utils/downloader.py`) turns a model name plus a file name into a path under
+`models/`. An unknown model name exits immediately; a missing individual file is fatal only when
+`critical_for_file_absence` is set (it is, unless `--skip_loading_error` was passed), otherwise
+`get_file_path()` returns `None` and the caller decides.
 
 Export (`make export_models` → `src.models_export.scripts.eval`) walks the tree calling
 `export_models(output_dir, opset_version)` on every node. Each network becomes an ONNX file and

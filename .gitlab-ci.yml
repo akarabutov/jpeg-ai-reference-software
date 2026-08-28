@@ -31,8 +31,8 @@ unit-test:       # This job runs in the build stage, which runs first.
     - echo "Activate env."
     - source /root/miniconda3/bin/activate && conda activate jpeg_ai_vm
     - pip install -r requirements.txt
-    - dvc remote add -d myremote $DVC_URL
-    - dvc remote modify myremote password $DVC_PASS
+    - echo "Fetch models and test images"
+    - git lfs pull --include="models/**,data/test/**"
     - echo "Compiling the code..."
     - ./scripts/build_test_libs.sh
     - echo "Compile complete."
@@ -56,14 +56,11 @@ test-img30-perf:
     - echo "Install necessary packages"
     - pip install -r requirements.txt
     - apt-get install -y curl
-    - echo "Setup DVC"
-    - dvc remote add -d myremote $DVC_URL
-    - dvc remote modify myremote password $DVC_PASS
     - echo "Compiling the code..."
     - ./scripts/build_test_libs.sh
     - echo "Compile completed."
-    - echo "Download image"
-    - dvc pull data/test/00030_TE_560x888_8bit_sRGB.png.dvc
+    - echo "Fetch models and the test image"
+    - git lfs pull --include="models/**,data/test/00030_TE_560x888_8bit_sRGB.png"
     - echo "Run test on 30th image"    
     - CUDA_VISIBLE_DEVICES="-1,-2,-3" ./scripts/run_reco_all_cfgs.sh ./results/base_cfgs_img30 ./cfg/eval/short_test.json --imgs 00030_TE_560x888_8bit_sRGB.png #--only_cpu --cpu_threads_limit 1
     - python ./scripts/merge_op_results.py ./results/base_cfgs_img30 --fn-prefix MR${CI_MERGE_REQUEST_IID}_${CI_COMMIT_SHORT_SHA} --start-row 148 --template ./docs/template_img30.xlsm
@@ -83,14 +80,11 @@ test-img30-toolena:
     - echo "Install necessary packages"
     - pip install -r requirements.txt
     - apt-get install -y curl
-    - echo "Setup DVC"
-    - dvc remote add -d myremote $DVC_URL
-    - dvc remote modify myremote password $DVC_PASS
     - echo "Compiling the code..."
     - ./scripts/build_test_libs.sh
     - echo "Compile completed."
-    - echo "Download image"
-    - dvc pull data/test/00030_TE_560x888_8bit_sRGB.png.dvc
+    - echo "Fetch models and the test image"
+    - git lfs pull --include="models/**,data/test/00030_TE_560x888_8bit_sRGB.png"
     - echo "Run test of tool-ena on 30th image"    
     - CUDA_VISIBLE_DEVICES="-1,-2,-3" python ./scripts/run_tool_perf.py ./cfg/tool_ena ./results/tool_ena --base-cfg ./cfg/eval/bop.json --imgs 00030_TE_560x888_8bit_sRGB.png --only_cpu --cpu_threads_limit 1
     - python ./scripts/merge_op_results.py ./results/tool_ena --fn-prefix MR${CI_MERGE_REQUEST_IID}_${CI_COMMIT_SHORT_SHA}_tool_ena_BOP --start-row 148 --template ./docs/template_img30.xlsm --anchor bop:anchor

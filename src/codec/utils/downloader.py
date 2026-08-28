@@ -31,35 +31,31 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 
 import os
-import sys
 
 class Downloader:
     def __init__(self, models_dir, critical_for_file_absence: bool = False):
         self.models_dir = models_dir
-        python_path = sys.executable
-        python_bin_dir = os.path.dirname(python_path)
-        self.dvc_path = os.path.join(python_bin_dir, 'dvc')
         self.downloaded_models_list = list()
         self.critical_for_file_absence = critical_for_file_absence
 
     def download_models(self, models_list):
+        """Check that every requested model is present under models_dir.
+
+        The checkpoints are part of the repository and are materialised by
+        `git lfs checkout`, so nothing is fetched here -- this only reports a
+        model that is missing or was never checked out.
+        """
         for model_name in models_list:
             d = os.path.join(self.models_dir, model_name)
             if d in self.downloaded_models_list:
                 continue
-            if os.path.exists(d):
-                dvc_files_list = [os.path.join(d, x) for x in os.listdir(d) if x.endswith('.dvc')]
-                if len(dvc_files_list) == 0:
-                    print(f'No *.dvc files for model {model_name} in repository!!!')
-                    exit(-120)
-                else:
-                    dvc_files = ' '.join(dvc_files_list)
-                    os.system(f'{self.dvc_path} fetch {dvc_files}')
-                    os.system(f'{self.dvc_path} checkout -f {dvc_files}')
-                    self.downloaded_models_list.append(d)
-            else:
+            if not os.path.exists(d):
                 print(f'No information about model {model_name} in repository!!!')
                 exit(-100)
+            if len([x for x in os.listdir(d) if x.endswith('.pth')]) == 0:
+                print(f'No checkpoint files for model {model_name} in repository!!!')
+                exit(-120)
+            self.downloaded_models_list.append(d)
 
     def get_file_path(self, model_name, file_name):
         path = os.path.join(self.models_dir, model_name, file_name)

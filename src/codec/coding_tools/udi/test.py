@@ -38,7 +38,6 @@ import sys
 import torch
 import numpy as np
 import json
-from typing import List
 import tempfile
 import subprocess
 from src.codec.common import Image
@@ -48,7 +47,6 @@ class TestRecoTask(unittest.TestCase):
     def init_images(self):
         self.path_in = 'data/test'
         self.imgs = ['00030_TE_560x888_8bit_sRGB.png']
-        self.dvc_pull([os.path.join(self.path_in, img) for img in self.imgs], [" > /dev/null"])
 
     def create_udi_info(self, filename):
         f_size = np.random.randint(10, 200)
@@ -60,12 +58,6 @@ class TestRecoTask(unittest.TestCase):
         data2 = np.fromfile(fn2, dtype=np.int8)
         return (data1 == data2).all()
             
-    def dvc_pull(self, file_list: List[str], additional_args: List[str] = None) -> int:
-        cmd = [sys.executable, '-m', 'dvc', 'pull'] + [f'{x}.dvc' for x in file_list]
-        if additional_args is not None:
-            cmd += additional_args
-        os.system(' '.join(cmd) + " > /dev/null 2>&1")
-        
     # Test
     def test_udi(self):
         self.init_images()

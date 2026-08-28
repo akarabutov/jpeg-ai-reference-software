@@ -10,9 +10,8 @@ flowchart TB
     end
 
     subgraph DATA["Data and models"]
-        D1["make download_test_ds"]
-        D2["make download_models"]
-        D3["make download_dvc_cache"]
+        D1["git lfs fetch / checkout"]
+        D2["make download_train_ds"]
     end
 
     subgraph CODEC["Coding"]
@@ -45,6 +44,17 @@ flowchart TB
 
 ## 2. Make targets
 
+The models and the image sets are part of the repository, stored with git-lfs, so there is no
+separate download step for them — a fresh clone needs
+
+```bash
+git lfs fetch
+git lfs checkout
+```
+
+to turn the pointer stubs into real files. Only the training set is fetched separately, by
+`make download_train_ds`.
+
 | Target | Runs | Purpose |
 | --- | --- | --- |
 | `make setup_system` | `sudo scripts/setup_system.sh` | `apt install doxygen 1.8.13, graphviz 2.40.1, python3-dev, git-lfs` |
@@ -52,10 +62,7 @@ flowchart TB
 | `make configure` | both of the above | One-shot machine setup |
 | `make build_test_libs` | `scripts/build_test_libs.sh` → `build_ec_lib.sh` | Build the `mans` and `direct` entropy-coding extensions |
 | `make build_libs` | `build_test_libs` | Alias kept for the training documentation; today it builds exactly the same libraries |
-| `make download_test_ds` | `scripts/download_test_ds.sh` | `dvc pull data/test/*.dvc` |
-| `make download_models` | `scripts/download_models.sh` | `dvc pull models/*/*.dvc` |
 | `make download_train_ds` | `scripts/download_train_ds.sh` | Pull the training set |
-| `make download_dvc_cache` | `scripts/sFTP_mirror/download_cache.sh` | Mirror the DVC cache from the upstream sFTP |
 | `make test` | `python -m src.reco.scripts.eval --coding_type enc_dec --out_dir results/test` | The standard encode+decode+compare run over the test set |
 | `make train` | `scripts/train.sh` | Launch a training run — see [13 — Training](13-training.md) |
 | `make unittest` | `CUDA_VISIBLE_DEVICES="-1" python -m unittest -v` | Unit tests, CPU only |
@@ -66,7 +73,7 @@ flowchart TB
 | `make tool_perf` | both | The complete tool-contribution matrix |
 | `make export_models` | `scripts/export_models.sh` | ONNX + CSV export, reorganised into the standard's layout |
 | `make build_docker` / `make run_docker` | `docker build/run` | Image `diveraak/jpeg_ai:latest` |
-| `make all` | configure → build → download → test | Everything from scratch |
+| `make all` | configure → build → test | Everything from scratch |
 | `make docs` | `scripts/build_docs.py doxygen` + `doxygen` | Build the HTML site (API reference plus these pages) into `docs/html` |
 | `make docs_single` | `scripts/build_docs.py single` | Build one self-contained page `docs/architecture.html` |
 
@@ -267,7 +274,7 @@ See `docs/md/quantization.md`.
 | `scripts/cleanup_cp.py <in> <out>` | Strip optimiser/training state |
 | `scripts/copy_cp_elems.py <in1> <in2> <out>` | Copy selected tensors between checkpoints |
 | `scripts/rename_modules.py <in> <out>` | Rename `state_dict` keys after a refactor |
-| `scripts/process_model.py <model_name> [--push]` | DVC add/push a model directory |
+| `scripts/process_model.py <model_name> [--push] [--pack]` | Strip `best_loss`/`optimizer` from every checkpoint in a model directory, then register and optionally upload it |
 | `scripts/reduce_z_distributions.py [--n_distributions 128] [--cp_dir models/VM_common]` | Cluster the z distributions down to a fixed count |
 | `scripts/get_z_distributions_idxs.py [--cp_dir models/VM_common_int]` | Emit the z distribution index tables |
 
@@ -277,7 +284,7 @@ See `docs/md/quantization.md`.
 
 | Step | Script | Action |
 | --- | --- | --- |
-| 0 | `step0.sh` | Remove the current models (`git rm` the `.dvc` pointers) |
+| 0 | `step0.sh` | Remove the current models from the repository |
 | 1 | `step1.sh` | Split models from the trained checkpoints |
 | 2 | `step2.sh` | Reduce the number of Z distributions |
 | 3 | `step3.sh` | Reorder weights for parallel decoding (`progressive_decoding/reorder.sh`), producing `VM_common_int` |
@@ -306,5 +313,4 @@ This is the pipeline that turns training output into a release model set.
 | `scripts/run_profiler.sh` | Run with profiler collectors enabled |
 | `scripts/run_reco_all_cfgs.sh <out_dir> <cfg> [args]` | Run every configuration; used by CI |
 | `scripts/post_comment_gitlab.py <TOKEN> <PROJECT_ID> <MR_IID> [--files …] [--msg …] [--only_if_files_exist]` | Post CI results as a merge-request comment |
-| `scripts/sFTP_mirror/*` | Set up a local sFTP mirror of the DVC model cache: `setup_sftp_server.sh`, `download_cache.sh`, `setup_crontab.sh` (3-hourly `cron.sh`), `setup_cfg.sh` (writes `.dvc/config.local`) |
 | `scripts/progressive_decoding/*` | Standalone BOP/HOP/SOP encoder and decoder variants, channel ordering (`channel_list.py`, `reorder.sh`) and channel-wise entropy analysis |
