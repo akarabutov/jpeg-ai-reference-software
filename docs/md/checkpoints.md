@@ -18,23 +18,11 @@ Put checkpoints to directory `models/<MODEL_NAME>`, where `<MODEL_NAME>` is a na
 
     python scripts/process_model.py <MODEL_NAME>
 
-or execute commands manually:
+or execute the command manually:
 
-    dvc add models/<MODEL_NAME>/*.pth
-    dvc commit models/<MODEL_NAME>/*.pth
+    git add models/<MODEL_NAME>/*.pth
 
-## Push existing checkpoints to server
-
-To push checkpoints of model `<MODEL_NAME>` from directory `models/<MODEL_NAME>` to sFTP server run the following command:
-
-    python scripts/process_model.py <MODEL_NAME> --push
-
-or execute commands manually:
-
-    dvc add models/<MODEL_NAME>/*.pth
-    dvc commit models/<MODEL_NAME>/*.dvc
-    dvc push models/<MODEL_NAME>/*.dvc
-    git add models/<MODEL_NAME>/*.dvc
+The checkpoints are stored in the repository itself. The git-lfs filter declared in `.gitattributes` replaces them with pointers on commit, so `git push` uploads the content.
 
 ## Pack existing checkpoints for uploading them on global sFTP
 
@@ -44,9 +32,7 @@ To pack checkpoints of model `<MODEL_NAME>` to archive run the following command
 
 or execute commands manually:
 
-    dvc add models/<MODEL_NAME>/*.pth
-    dvc commit models/<MODEL_NAME>/*.dvc
-    git add models/<MODEL_NAME>/*.dvc
+    git add models/<MODEL_NAME>/*.pth
     tar -cvzf <MODEL_NAME>.tgz models/<MODEL_NAME>/*.pth
 
 Archive will be stored in root directory with name `<MODEL_NAME>.tgz`. If you place this archive to directory `/uploads` on global sFTP, it will automatically put checkpoints to global cache.

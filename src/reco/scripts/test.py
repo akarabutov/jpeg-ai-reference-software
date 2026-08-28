@@ -43,7 +43,7 @@ import tempfile
 import subprocess
 import commentjson
 from src.codec.common import Image
-from src.codec import CTC_get_default_fn
+from src.codec import get_codec_name
 
 class TestRecoTask(unittest.TestCase):
     IMG_COUNT = 1
@@ -51,12 +51,10 @@ class TestRecoTask(unittest.TestCase):
     def init_images(self):
         self.path_in = 'data/test'
         self.imgs = ['00030_TE_560x888_8bit_sRGB.png', '00018_TE_3032x1856_8bit_sRGB.png']
-        self.dvc_pull([os.path.join(self.path_in, img) for img in self.imgs])
 
     def init_images_tiles(self):
         self.path_in = 'data/test'
         self.imgs = ['00001_TE_2096x1400_8bit_sRGB.png']
-        self.dvc_pull([os.path.join(self.path_in, img) for img in self.imgs])
 
     def create_png_file(self, dir_path: str, index: int, max_size: int):
         w = np.random.randint(100, max_size//2)*2
@@ -164,10 +162,6 @@ class TestRecoTask(unittest.TestCase):
                                results_path=path_out, 
                                additional_args=["--use_yuv", "1", "--imgs"] + files_list)
             
-    def dvc_pull(self, file_list: List[str]) -> int:
-        cmd = [sys.executable, '-m', 'dvc', 'pull'] + [f'{x}.dvc' for x in file_list]
-        os.system(' '.join(cmd) + " > /dev/null 2>&1")        
-            
     ## Tests
     def test_recotask_yuv420(self):
         self.run_recotask_yuv('420')
@@ -209,7 +203,8 @@ class TestRecoTask(unittest.TestCase):
                             bit_fl = [x for x in os.listdir(bit_dir_path)]
                             for idx,s in files_s.items():
                                 for bpp in target_bpps:
-                                    name = "VM_{:05d}_TE_{:03d}.bits".format(idx, bpp)
+                                    name = "{}_{:05d}_TE_{:03d}.bits".format(get_codec_name(), idx, bpp)
+                                    print(f"{name} in {bit_fl} {bit_dir_path}")
                                     self.assertTrue(name in bit_fl)
                                     f_size = os.stat(os.path.join(bit_dir_path, name)).st_size
                                     cur_bpp = f_size * 8 / s

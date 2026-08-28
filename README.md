@@ -50,7 +50,6 @@ conda activate jpeg_ai_vm
 make test
 ```
 the results will be stored to a directory `results/test`.
-The script automatically download models and checks there MD5 hashs.
 
 Use the following command line to encode an image:
 

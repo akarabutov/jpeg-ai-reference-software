@@ -44,19 +44,3 @@ repos:
   - id: mixed-line-ending      # Replace or check mixed line ending
     args: [--fix=lf]
     exclude: (3rdparty|thirdparty)
-- repo: https://github.com/iterative/dvc
-  rev: 2.10.2       # Tag should be the same as in req-s.txt
-  hooks:
-  - id: dvc-pre-commit
-    language_version: python3
-    stages:
-    - commit
-  - id: dvc-pre-push
-    language_version: python3
-    stages:
-    - push
-  - id: dvc-post-checkout
-    language_version: python3
-    stages:
-    - post-checkout
-    always_run: true

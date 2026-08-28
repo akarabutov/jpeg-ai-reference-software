@@ -40,7 +40,6 @@ import subprocess
 import shutil
 import tempfile
 import commentjson
-from typing import List
 from src.codec.common import Image
 from src.codec import get_cfg_def_dir
 
@@ -58,11 +57,6 @@ class TestTrainTask(unittest.TestCase):
         return fn
         
           
-    def dvc_pull(self, file_list: List[str]) -> int:
-        cmd = [sys.executable, '-m', 'dvc', 'pull'] + [f'{x}.dvc' for x in file_list]
-        #return subprocess.check_output(cmd) #, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, )    
-        os.system(' '.join(cmd) + " > /dev/null 2>&1")
-        
     def run_train(self, img_path, img_lst, out_dir, additional_args=list()):
         ## Prepare train.json
         with open(os.path.join(get_cfg_def_dir(), "train.json"), "r") as f:
@@ -150,11 +144,8 @@ class TestTrainTask(unittest.TestCase):
         os.remove(logs_archive_path)
             
     def test_train(self):
-        # Download models 
         init_train_stage = "MSE_VariableRate_12"
         path_to_models=os.path.join(os.getcwd(), "models", "VM_common", "train_stages")
-        dvc_lst = [os.path.join(path_to_models, init_train_stage, x, "best.pth") for x in os.listdir(os.path.join(path_to_models, init_train_stage))]
-        ans = self.dvc_pull(dvc_lst)
         # Create dummy images
         with tempfile.TemporaryDirectory() as img_path, tempfile.TemporaryDirectory() as out_dir:
             img_lst = list()

@@ -1,4 +1,4 @@
 {
-    "profiles": ["simple", "main", "high"],
+    "profiles": ["simple", "base", "high"],
     "pre_args": ["--coding_type", "enc_dec"]
 }

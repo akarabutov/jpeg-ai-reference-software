@@ -53,9 +53,8 @@ WORKDIR /root/vm
 RUN \
     source /root/miniconda3/bin/activate && \
     conda activate jpeg_ai_vm && \
-    dvc pull data/test/*.dvc && \
-    dvc pull models/VM/*.dvc 
-    
+    git lfs fetch && \
+    git lfs checkout
 
 RUN echo 'root:Ai123456!@#$%^' | chpasswd
 
