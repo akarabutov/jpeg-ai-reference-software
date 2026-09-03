@@ -4,7 +4,7 @@
 #  and contributor rights, including patent rights, and no such rights are
 #  granted under this license.
 # 
-#  Copyright (c) 2010-2022, ITU/ISO/IEC
+#  Copyright (c) 2010-2026, ITU/ISO/IEC
 #  All rights reserved.
 # 
 #  Redistribution and use in source and binary forms, with or without
@@ -19,7 +19,8 @@
 #  be used to endorse or promote products derived from this software without
 #  specific prior written permission.
 # 
-#  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# DISCLAIMER
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 #  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 #  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
 #  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
@@ -37,14 +38,14 @@ OUTPUT_DIR=results/models
 python scripts/run_eval_script.py --cfg cfg/eval/onnx.json --module src.models_export.scripts.eval $OUTPUT_DIR -post_filters.tools ""
 python -m src.models_export.scripts.eval --cfg ./cfg/tools_on.json ./cfg/oper_point/bop.json --out_dir $OUTPUT_DIR
 #rm -R results/models/model/CCS_SGMM/tools_*/model_*/*.onnx
-analyze_op=("bop" "hop")
+analyze_op=("base" "high")
 encoder_ids=("0" "1")
 comp_short=("y" "uv")
 comp_short_up=("Y" "UV")
 comp_names=("primary" "secondary")
-synthesis_op=("sop" "bop" "hop")
+synthesis_op=("simple" "base" "high")
 synthesis_ids=("0" "1" "2")
-syn_op_dirs=("bopEnc_sopDec" "bop" "hop")
+syn_op_dirs=("simple" "base" "high")
 betas=("0.002" "0.012" "0.075" "0.5")
 tools_count=4
 
