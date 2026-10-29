@@ -39,7 +39,7 @@ git lfs checkout
 
 Training and Validation datasets could be downloaded by a command: `make download_train_ds`.
 
-The training dataset will be stored to `data/jpegai_training_random_crop` and the validation dataset will be stored to `data/jpegai_validation_set`.
+The training dataset will be stored to `data/jpegai_training_set` and the validation dataset will be stored to `data/jpegai_validation_set`.
 
 ## Evaluation of the reconstruction task
 

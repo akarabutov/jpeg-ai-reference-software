@@ -62,11 +62,11 @@ ALL_CATEGORIES=(natural_cropped natural_full scc extra valid_cropped valid_full)
 
 declare -A CAT_LABEL=(
     [natural_cropped]="Natural images, training set - CROPPED (ready-to-use 512x512 random crops)"
-    [natural_full]="Natural images, training set - FULL resolution (non-cropped source images; crop them yourself with src/codec/datasets/image_crop.py)"
-    [scc]="Screen-content training patches (SCC7000)"
-    [extra]="Extra training categories (CP50, EXCEL300, HF2000, LQ7000, MD300, PHF200, PHFA500)"
+    [natural_full]="Natural images, training set - FULL resolution (non-cropped source images, merged into the same training folder - run src/codec/datasets/image_crop.py yourself if you need uniform crops)"
+    [scc]="Screen-content training patches (SCC7000), merged into the training folder"
+    [extra]="Extra training categories (CP50, EXCEL300, HF2000, LQ7000, MD300, PHF200, PHFA500), merged into the training folder"
     [valid_cropped]="Validation set - CROPPED"
-    [valid_full]="Validation set - FULL resolution"
+    [valid_full]="Validation set - FULL resolution, merged into the same validation folder"
 )
 
 declare -A CAT_SIZE=(
@@ -293,11 +293,13 @@ extract_7z_flat() {
     7z e -y "$first_part" -o"$outdir" > /dev/null
 }
 
-# Extract a multi-volume 7z archive preserving its internal folder structure.
-extract_7z_tree() {
-    local first_part="$1" outdir="$2"
-    mkdir -p "$outdir"
-    7z x -y "$first_part" -o"$outdir" > /dev/null
+# Writes a flat list of the files in $1 (one per line, skipping any existing
+# .txt files) to $2.
+generate_file_list() {
+    local dir="$1" list_file="$2"
+    [ -d "$dir" ] || return 0
+    echo "==> Generating ${list_file}"
+    ls -1 "$dir" | { grep -v '\.txt$' || true; } > "${list_file}"
 }
 
 download_category() {
@@ -331,53 +333,57 @@ for cat in "${SELECTED[@]}"; do
 done
 [ "$NEEDS_7Z" -eq 1 ] && require_7z
 
+# All training categories land flat in one directory, and all validation
+# categories land flat in one other directory - scripts/train.sh and
+# cfg/train.json consume a single --data_dir/--lst and --val_data_dir/--val_lst
+# pair each, not one per category.
+TRAINING_DIR=jpegai_training_set
+VALIDATION_DIR=jpegai_validation_set
+
 for cat in "${SELECTED[@]}"; do
     case "$cat" in
         natural_cropped)
-            echo "==> Extracting natural_cropped into jpegai_training_random_crop/"
+            echo "==> Extracting natural_cropped into ${TRAINING_DIR}/"
             for batch in "00000-01299" "01300-02599" "02600-03899" "03900-05263"; do
-                extract_7z_flat "jpegai_train-natural-cropped_${batch}_bundle.7z.001" jpegai_training_random_crop
+                extract_7z_flat "jpegai_train-natural-cropped_${batch}_bundle.7z.001" "$TRAINING_DIR"
             done
             ;;
         natural_full)
-            echo "==> Extracting natural_full into jpegai_training_full/"
-            extract_7z_tree "jpegai_train-natural-full_bundle.7z.001" jpegai_training_full
+            echo "==> Extracting natural_full into ${TRAINING_DIR}/"
             echo "    Note: these are full-resolution source images, not pre-cropped."
             echo "    Use src/codec/datasets/image_crop.py (see src/codec/datasets/crop_image.sh"
             echo "    for example invocations) to produce training crops from them."
+            extract_7z_flat jpegai_train-natural-full_bundle.7z.001 "$TRAINING_DIR"
             ;;
         scc)
-            echo "==> Extracting scc into jpegai_training_random_crop/"
-            mkdir -p jpegai_training_random_crop
-            tar -xf jpegai_train-extra_SCC7000P2.tar -C jpegai_training_random_crop
+            echo "==> Extracting scc into ${TRAINING_DIR}/"
+            mkdir -p "$TRAINING_DIR"
+            tar -xf jpegai_train-extra_SCC7000P2.tar -C "$TRAINING_DIR"
             ;;
         extra)
-            echo "==> Extracting extra categories into jpegai_training_extra/<category>/"
+            echo "==> Extracting extra categories into ${TRAINING_DIR}/"
+            mkdir -p "$TRAINING_DIR"
             for name in CP50 EXCEL300 HF2000 LQ7000 MD300 PHF200 PHFA500; do
-                mkdir -p "jpegai_training_extra/${name}"
-                tar -xf "jpegai_train-extra_${name}.tar" -C "jpegai_training_extra/${name}"
+                tar -xf "jpegai_train-extra_${name}.tar" -C "$TRAINING_DIR"
             done
             ;;
         valid_cropped)
-            echo "==> Extracting valid_cropped into jpegai_validation_set/"
-            extract_7z_flat jpegai_valid-natural_cropped_bundle.7z.001 jpegai_validation_set
+            echo "==> Extracting valid_cropped into ${VALIDATION_DIR}/"
+            extract_7z_flat jpegai_valid-natural_cropped_bundle.7z.001 "$VALIDATION_DIR"
             ;;
         valid_full)
-            echo "==> Extracting valid_full into jpegai_validation_set_full/"
-            extract_7z_flat jpegai_valid-natural-full_bundle.7z.001 jpegai_validation_set_full
+            echo "==> Extracting valid_full into ${VALIDATION_DIR}/"
+            extract_7z_flat jpegai_valid-natural-full_bundle.7z.001 "$VALIDATION_DIR"
             ;;
     esac
 done
 
 # -----------------------------------------------------------------------------
-# Generate the training file list (only meaningful once natural_cropped,
-# optionally merged with scc, has been extracted into jpegai_training_random_crop/)
+# One file list per directory, named the way scripts/train.sh and
+# docs/architecture/13-training.md expect them.
 # -----------------------------------------------------------------------------
-if [ -d jpegai_training_random_crop ]; then
-    echo "==> Generating jpegai_training_random_crop/jpegai_training_set512_random_crop_16.txt"
-    ls -1 jpegai_training_random_crop/ | { grep -v '\.txt$' || true; } \
-        > jpegai_training_random_crop/jpegai_training_set512_random_crop_16.txt
-fi
+generate_file_list "$TRAINING_DIR" "${TRAINING_DIR}/jpegai_training_set512_random_crop_16.txt"
+generate_file_list "$VALIDATION_DIR" "${VALIDATION_DIR}/jpegai_validation_set_10.txt"
 
 echo
 echo "Done."
