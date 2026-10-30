@@ -61,8 +61,8 @@ make train                  # == scripts/train.sh
 
 ```bash
 python3 -m scripts.acc_train_scripts.acc_train_local \
-       --data_dir      ${DATA_ROOT}/jpegai_training_random_crop/ \
-       --lst           ${DATA_ROOT}/jpegai_training_random_crop/jpegai_training_set512_random_crop_16.txt \
+       --data_dir      ${DATA_ROOT}/jpegai_training_set/ \
+       --lst           ${DATA_ROOT}/jpegai_training_set/jpegai_training_set512_random_crop_16.txt \
        --val_data_dir  ${DATA_ROOT}/jpegai_validation_set/ \
        --val_lst       ${DATA_ROOT}/jpegai_validation_set/jpegai_validation_set_10.txt \
        --train_url     ${work_dir}/train_results/
@@ -882,7 +882,7 @@ carries it is linked in the script), pulls from `amalia.img.lx.it.pt` as user `j
 - `train_and_valid_scc700/scc7000_patchs2.tar` — the screen-content patches,
 - the validation set archive,
 
-unzips them flat into `data/jpegai_training_random_crop/` and
+unzips them flat into `data/jpegai_training_set/` and
 `data/jpegai_validation_set/`, and generates
 `jpegai_training_set512_random_crop_16.txt` by listing the directory and removing `.txt`
 entries.
@@ -903,7 +903,7 @@ How the cropped set is produced from the full-resolution JPEG AI training images
 | `--crop_format` | `random` / `sliding`, `random` | Random crops, or an exhaustive sliding tiling |
 | `--seed` | 123 | Randomness for `random` |
 
-The shipped lists reference crops from `jpegai_training_random_crop/` and
+The shipped lists reference crops from `jpegai_training_set/` and
 `jpegai_training_7000scc/`.
 
 ## 14. The ICCI/eICCI post-filter trainer

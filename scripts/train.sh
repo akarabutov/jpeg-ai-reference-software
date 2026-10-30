@@ -41,8 +41,8 @@ cd ${work_dir}
 export PYTHONPATH=${PYTHONPATH}:${work_dir}
 
 python3 -m scripts.acc_train_scripts.acc_train_local \
-       --data_dir ${DATA_ROOT}/jpegai_training_random_crop/ \
-       --lst ${DATA_ROOT}/jpegai_training_random_crop/jpegai_training_set512_random_crop_16.txt \
+       --data_dir ${DATA_ROOT}/jpegai_training_set/ \
+       --lst ${DATA_ROOT}/jpegai_training_set/jpegai_training_set512_random_crop_16.txt \
        --val_data_dir ${DATA_ROOT}/jpegai_validation_set/ \
        --val_lst ${DATA_ROOT}/jpegai_validation_set/jpegai_validation_set_10.txt \
        --train_url ${work_dir}/train_results/ 

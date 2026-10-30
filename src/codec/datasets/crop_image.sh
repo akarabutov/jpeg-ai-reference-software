@@ -33,11 +33,11 @@ python image_crop.py --lst /home/gts/AIcodec/data/jpegai/jpegai_training_set512.
 #  THE POSSIBILITY OF SUCH DAMAGE.
 
                      --data_dir /home/gts/AIcodec/data/jpegai/jpegai_training/ \
-                     --save_data_dir /home/gts/AIcodec/data/jpegai/jpegai_training_random_crop/ \
+                     --save_data_dir /home/gts/AIcodec/data/jpegai/jpegai_training_set/ \
                      --crop_size 1024 \
                      --crop_format random \
                      --output_info /home/gts/AIcodec/data/jpegai/jpegai_training_set512_random_crop_info.txt \
-                     --output_lst /home/gts/AIcodec/data/jpegai/jpegai_training_random_crop/jpegai_training_set512_random_crop.txt \
+                     --output_lst /home/gts/AIcodec/data/jpegai/jpegai_training_set/jpegai_training_set512_random_crop.txt \
 
 python image_crop.py --lst /home/gts/AIcodec/data/jpegai/jpegai_training_set512.txt \
                      --data_dir /home/gts/AIcodec/data/jpegai/jpegai_training/ \
