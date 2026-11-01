@@ -9,8 +9,8 @@
 			"tools_common": {
 				"beta_list": [0.0005, 0.001, 0.002, 0.004, 0.007, 0.01, 0.012, 0.015, 0.03, 0.05, 0.075, 0.1, 0.2, 0.5, 0.75, 1.0, 2.0, 3.0],
 				"sigma_quant_min": 0.11,
-				"sigma_quant_max": 100,
-				"sigma_quant_level": 35,
+				"sigma_quant_max": 54.82,
+				"sigma_quant_level": 32,
 				"sigma_bound_offset": 0.5,
 				"model_common": {
 					"common_modules": {
