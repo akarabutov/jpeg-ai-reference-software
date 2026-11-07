@@ -30,14 +30,22 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
+"""PyTorch Lightning based training of the CCS codec models.
 
-__all__ = ['ddp_model_init']
+* :class:`CCSLightningModule` - training/validation/data-collection steps around ``model.Net``;
+* :class:`CCSDataModule` - training and validation datasets;
+* :class:`PerSubmoduleDDPStrategy` - DDP strategy keeping the per-sub-network DDP of ``Net``;
+* callbacks writing the legacy outputs of a stage (``<epoch>.pth``, ``best.pth``,
+  ``val_results.json``, tensorboard logs) and running the automatic testing.
+"""
 
+from .callbacks import AutomaticTesting, StageOutputs
+from .compat import pl
+from .datamodule import CCSDataModule
+from .module import CCSLightningModule
+from .strategy import PerSubmoduleDDPStrategy
 
-def ddp_model_init(ModelClass, args):
-    net = ModelClass(args)
-    if args.resume:
-        net.resume_weight(args.resume, False)
-    net.convert_memory_format(choice=args.mem_format)
-    net.DDP(args.local_rank)
-    return net
+__all__ = [
+    'pl', 'CCSLightningModule', 'CCSDataModule', 'PerSubmoduleDDPStrategy', 'StageOutputs',
+    'AutomaticTesting'
+]

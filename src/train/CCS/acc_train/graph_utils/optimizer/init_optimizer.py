@@ -39,7 +39,7 @@ __all__ = ['init_optimizer']
 def init_optimizer(args, net):
 
     analysis_models, synthesis_models, entropy_part_models, gain_unit_models = \
-            net.parameters()
+            net.parameter_groups()
 
     opt_choices = {'adam': torch.optim.Adam}
 

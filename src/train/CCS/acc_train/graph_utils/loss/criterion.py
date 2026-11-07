@@ -31,6 +31,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
+import torch
 import torch.distributed as dist
 import torch.nn as nn
 
@@ -41,10 +42,24 @@ from .regulation import Regulation
 __all__ = ['set_criterion']
 
 
-def set_criterion(reg_loss_weight=5.0e-9):
+def _default_device():
+    if torch.cuda.is_available():
+        return torch.device('cuda', dist.get_rank() if dist.is_available() and dist.is_initialized() else 0)
+    return torch.device('cpu')
+
+
+def set_criterion(reg_loss_weight=5.0e-9, device=None):
+    """Create the loss functions used by the training.
+
+    Args:
+        reg_loss_weight (float): weight of the L1 regulation loss.
+        device (torch.device, optional): device of the losses. Defaults to the GPU of this process
+            (or CPU when CUDA is not available).
+    """
+    device = _default_device() if device is None else device
     criterion = dict()
-    criterion['mse'] = nn.MSELoss().to(dist.get_rank())
-    criterion['msssim'] = MSSSIM().to(dist.get_rank())
+    criterion['mse'] = nn.MSELoss().to(device)
+    criterion['msssim'] = MSSSIM().to(device)
     criterion['reg'] = Regulation(factor=reg_loss_weight, reg_type='L1')
-    criterion['kd'] = nn.MSELoss().to(dist.get_rank())
+    criterion['kd'] = nn.MSELoss().to(device)
     return criterion

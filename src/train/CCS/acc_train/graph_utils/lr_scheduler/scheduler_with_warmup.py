@@ -68,6 +68,9 @@ class WarmupLR(_LRScheduler):
         self._format_param()
 
     def __getattr__(self, name):
+        # called only for attributes which are not found; '_scheduler' is not set yet while unpickling
+        if name == '_scheduler':
+            raise AttributeError(name)
         return getattr(self._scheduler, name)
 
     def state_dict(self):
@@ -75,9 +78,11 @@ class WarmupLR(_LRScheduler):
         It contains an entry for every variable in self.__dict__ which
         is not the optimizer.
         """
+        # '_warmup_func' is a bound method (it would pickle the whole scheduler with the optimizer),
+        # it is restored from '_warmup_strategy'
         wrapper_state_dict = {
             key: value
-            for key, value in self.__dict__.items() if (key != 'optimizer' and key != '_scheduler')
+            for key, value in self.__dict__.items() if key not in ('optimizer', '_scheduler', '_warmup_func')
         }
         wrapped_state_dict = {
             key: value
@@ -91,8 +96,13 @@ class WarmupLR(_LRScheduler):
             state_dict (dict): scheduler state. Should be an object returned
                 from a call to :meth:`state_dict`.
         """
-        self.__dict__.update(state_dict['wrapper'])
+        wrapper_state_dict = {k: v for k, v in state_dict['wrapper'].items() if k != '_warmup_func'}
+        self.__dict__.update(wrapper_state_dict)
         self._scheduler.__dict__.update(state_dict['wrapped'])
+        self._warmup_func = {
+            'cos': self._warmup_cos,
+            'linear': self._warmup_linear,
+        }.get(self._warmup_strategy, self._warmup_const)
 
     def _format_param(self):
         # learning rate of each param group will increase

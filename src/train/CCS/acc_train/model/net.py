@@ -73,9 +73,17 @@ from typing import Tuple, List, Union
 __all__ = ['Net']
 
 
+def _is_main_process() -> bool:
+    return not (dist.is_available() and dist.is_initialized()) or dist.get_rank() == 0
+
+
+def _is_distributed() -> bool:
+    return dist.is_available() and dist.is_initialized()
+
+
 def get_beta_list(args):
     beta_list = [float(x) for x in args.beta_list.split(',')]
-    if dist.get_rank() == 0:
+    if _is_main_process():
         print('beta list for current train =', beta_list)
     model_beta_list = [
         0.0005, 0.001, 0.002, 0.004, 0.007, 0.01, 0.012, 0.015, 0.03, 0.05, 0.075, 0.1, 0.2, 0.5, 0.75, 1.0, 2.0, 3.0
@@ -159,7 +167,7 @@ class Net(nn.Module):
         N, N_UV, N_Y, _ = args.N, args.N_UV, args.N_Y, 1
         self.args = args
         self.mem_format = 'channel_first'
-        self.device = torch.device(args.local_rank if torch.cuda.is_available() else 'cpu')
+        init_device = torch.device(getattr(args, 'local_rank', 0) if torch.cuda.is_available() else 'cpu')
         self.beta_list, self.model_beta_list = get_beta_list(args)
         self.vae_encoder_type_list = args.vae_encoder_type_list
         self.vae_decoder_type_list = args.vae_decoder_type_list
@@ -238,8 +246,8 @@ class Net(nn.Module):
         self.hyper_entropy_UV = FactorizedProbModel(channels=N_UV, max_symbol=62)
         self.context_Y = Context(chs=N, quantize_func=self.quantize)
 
-        self.register_buffer('channel_wise_entropy_Y', torch.zeros(N, dtype=torch.float32, device=self.device))
-        self.register_buffer('channel_wise_entropy_UV', torch.zeros(N_UV, dtype=torch.float32, device=self.device))
+        self.register_buffer('channel_wise_entropy_Y', torch.zeros(N, dtype=torch.float32))
+        self.register_buffer('channel_wise_entropy_UV', torch.zeros(N_UV, dtype=torch.float32))
 
         self.model_list = [
             self.encoder_Y, self.encoder_UV, self.vr_vec_Y, self.vr_vec_UV,
@@ -265,14 +273,20 @@ class Net(nn.Module):
                                  ('context_Y', self.context_Y)]
 
         self._init_weight()
-        self._to_device()
-        self.loss_weights = self._loss_weight_parse(args.loss_weights)
+        # Not persistent: it is derived from the command line and must not appear in checkpoints.
+        self.register_buffer('loss_weights', self._loss_weight_parse(args.loss_weights), persistent=False)
+        self._to_device(init_device)
         enc_count = len(args.vae_encoder_type_list)
         self.loss_weights_summ = torch.zeros([enc_count])
         for enc_num in range(enc_count):
             self.loss_weights_summ[enc_num] = self.loss_weights[enc_num::enc_count].sum()
             
         self._register_load_state_dict_pre_hook(self._load_state_dict_hook)
+
+    @property
+    def device(self) -> torch.device:
+        """Device of the model. It follows ``.to()``/``.cuda()`` calls (e.g. done by Lightning)."""
+        return self.channel_wise_entropy_Y.device
 
     def zero_channel_wise_entropy(self):
         self.channel_wise_entropy_Y.fill_(0)
@@ -282,7 +296,7 @@ class Net(nn.Module):
         
         weights_arr = [[float(y) for y in x.split(',')] for x in weights_str.split(';')]
         
-        return torch.tensor(weights_arr, dtype=torch.float, device=self.device).flatten()
+        return torch.tensor(weights_arr, dtype=torch.float).flatten()
         
 
             
@@ -362,9 +376,8 @@ class Net(nn.Module):
         self.context_Y.apply(weights_init)
         #self.context_UV.apply(weights_init)
 
-    def _to_device(self):
-        for model in self.model_list:
-            model.to(self.device)
+    def _to_device(self, device):
+        self.to(device)
 
     def remove_keys(self, ckpt, keys):
         for k in keys:
@@ -414,7 +427,8 @@ class Net(nn.Module):
         epoch = checkpoint.get('epoch', -1)
 
         checkpoint = self.remove_keys(checkpoint, ["epoch", "best_loss", "optimizer"])
-        torch.distributed.barrier()
+        if _is_distributed():
+            torch.distributed.barrier()
 
         self.load_state_dict(checkpoint, strict)
         print("=> loaded checkpoint epoch {}".format(epoch))
@@ -426,7 +440,11 @@ class Net(nn.Module):
                            best_loss,
                            model_prefix='',
                            is_best=False):
-        """Save the checkpoint.
+        """Save the checkpoint in the legacy (``*.pth``) format.
+
+        The file holds ``epoch`` (next epoch to train), ``best_loss``, ``optimizer`` (its state dict)
+        and the model state dict without ``module.`` prefixes, which is the format the codec, the
+        automatic testing (``copy_model_for_test``/``split_cp``) and ``--resume`` expect.
         """
         if not os.path.exists(args.train_url):
             os.makedirs(args.train_url)
@@ -473,27 +491,55 @@ class Net(nn.Module):
         self.context_Y = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.context_Y)
         #self.context_UV = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.context_UV)
 
+    @staticmethod
+    def _gloo_ddp(module):
+        """DDP on CPU: gloo cannot broadcast bool tensors, the bool buffers (constant flags such as
+        ``is_quantized``) are excluded from the synchronisation."""
+        bool_buffers = [name for name, buf in module.named_buffers() if buf.dtype == torch.bool]
+        if bool_buffers:
+            DDP._set_params_and_buffers_to_ignore_for_model(module, bool_buffers)
+        return DDP(module)
+
     def DDP(self, local_rank):
-        self._replace_batchnorm()
-        ddp_obj = DDP if torch.cuda.device_count() > 0 else DummyDDP
-        self.encoder_Y = ddp_obj(self.encoder_Y, [local_rank], local_rank)
-        self.encoder_UV = ddp_obj(self.encoder_UV, [local_rank], local_rank)
-        self.vr_vec_Y = ddp_obj(self.vr_vec_Y, [local_rank], local_rank)
-        self.vr_vec_UV = ddp_obj(self.vr_vec_UV, [local_rank], local_rank)
-        self.decoder_Y = ddp_obj(self.decoder_Y, [local_rank], local_rank)
-        self.decoder_UV = ddp_obj(self.decoder_UV, [local_rank], local_rank)
-        self.hyper_encoder_Y = ddp_obj(self.hyper_encoder_Y, [local_rank], local_rank)
-        self.hyper_encoder_UV = ddp_obj(self.hyper_encoder_UV, [local_rank], local_rank)
-        self.hyper_decoder_Y = ddp_obj(self.hyper_decoder_Y, [local_rank], local_rank)
-        self.hyper_decoder_UV = ddp_obj(self.hyper_decoder_UV, [local_rank], local_rank)
-        self.hyper_scale_decoder_Y = ddp_obj(self.hyper_scale_decoder_Y, [local_rank], local_rank)
-        self.hyper_scale_decoder_UV = ddp_obj(self.hyper_scale_decoder_UV, [local_rank], local_rank)
-        self.hyper_entropy_Y = ddp_obj(self.hyper_entropy_Y, [local_rank], local_rank)
-        self.hyper_entropy_UV = ddp_obj(self.hyper_entropy_UV, [local_rank], local_rank)
-        self.context_Y = ddp_obj(self.context_Y, [local_rank], local_rank)
+        """Wrap every sub-network into its own ``DistributedDataParallel``.
+
+        Every sub-network is synchronised separately (the training step may run the forward pass
+        several times, e.g. the fp32 re-run after an AMP overflow). Without an initialised process
+        group, or with a single process, ``DummyDDP`` is used: it only provides the ``.module``
+        attribute the forward code relies on.
+        """
+        if _is_distributed() and dist.get_world_size() > 1:
+            # with a single process SyncBatchNorm is the same as BatchNorm (and needs CUDA in torch 1.10)
+            self._replace_batchnorm()
+            if torch.cuda.is_available():
+                ddp_obj = partial(DDP, device_ids=[local_rank], output_device=local_rank)
+            else:
+                ddp_obj = self._gloo_ddp
+        else:
+            ddp_obj = DummyDDP
+        self.encoder_Y = ddp_obj(self.encoder_Y)
+        self.encoder_UV = ddp_obj(self.encoder_UV)
+        self.vr_vec_Y = ddp_obj(self.vr_vec_Y)
+        self.vr_vec_UV = ddp_obj(self.vr_vec_UV)
+        self.decoder_Y = ddp_obj(self.decoder_Y)
+        self.decoder_UV = ddp_obj(self.decoder_UV)
+        self.hyper_encoder_Y = ddp_obj(self.hyper_encoder_Y)
+        self.hyper_encoder_UV = ddp_obj(self.hyper_encoder_UV)
+        self.hyper_decoder_Y = ddp_obj(self.hyper_decoder_Y)
+        self.hyper_decoder_UV = ddp_obj(self.hyper_decoder_UV)
+        self.hyper_scale_decoder_Y = ddp_obj(self.hyper_scale_decoder_Y)
+        self.hyper_scale_decoder_UV = ddp_obj(self.hyper_scale_decoder_UV)
+        self.hyper_entropy_Y = ddp_obj(self.hyper_entropy_Y)
+        self.hyper_entropy_UV = ddp_obj(self.hyper_entropy_UV)
+        self.context_Y = ddp_obj(self.context_Y)
         #self.context_UV = DDP(self.context_UV, [local_rank], local_rank)
 
-    def parameters(self):
+    def parameter_groups(self):
+        """Parameters split into the groups used by the optimizer (and by ``--frozen_part``).
+
+        Returns:
+            tuple: (analysis, synthesis, entropy part, gain unit) lists of param-group dicts.
+        """
         analysis_models = [{
             'params': self.encoder_Y.parameters()
         }, {

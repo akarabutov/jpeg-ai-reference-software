@@ -29,6 +29,8 @@ setuptools==59.5.0  # fix module 'distutils' has no attribute 'version', https:/
 tensorboard==2.9.0
 torch==1.10.2
 torchvision==0.11.3
+pytorch-lightning==1.9.5  # the newest release supporting torch 1.10; CCS training
+torchmetrics==0.11.4  # dependency of pytorch-lightning, compatible with torch 1.10
 wheel==0.34.2
 scikit-learn-extra==0.3.0
 commentjson==0.9.0

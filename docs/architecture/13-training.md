@@ -25,9 +25,9 @@ flowchart TB
     SH["scripts/train.sh<br/><i>make train</i>"]
     LOCAL["scripts/acc_train_scripts/acc_train_local.py<br/><i>the launcher — one process</i>"]
     EXPAND["run_stages_for_one_beta()<br/><i>one worker per beta;<br/>renders the stage template,<br/>runs the stages in order</i>"]
-    TRAIN["src.train.CCS.acc_train.multistages_train.train<br/><i>the trainer — one process per GPU, DDP</i>"]
+    TRAIN["src.train.CCS.acc_train.multistages_train.train<br/><i>the trainer — one process per GPU, PyTorch Lightning</i>"]
     NET["Net<br/><i>the differentiable codec</i>"]
-    LOOP["train_one_epoch() / validation()"]
+    LOOP["CCSLightningModule + CCSDataModule<br/><i>run by pl.Trainer</i>"]
 
     CFG1["cfg/train.json<br/><i>which betas, which GPUs, which stages</i>"]
     STAGES["cfg/train_stages.json<br/><i>per-stage arguments, a Templite template</i>"]
@@ -36,7 +36,7 @@ flowchart TB
     CFG1 --> LOCAL
     LOCAL -->|"multiprocessing.Pool"| EXPAND
     STAGES --> EXPAND
-    EXPAND -->|"torch.distributed.launch --nproc_per_node=N"| TRAIN
+    EXPAND -->|"torch.distributed.run --nproc_per_node=N"| TRAIN
     TRAIN --> NET
     TRAIN --> LOOP
 ```
@@ -81,7 +81,7 @@ sequenceDiagram
     participant M as main()
     participant P as Pool(4)
     participant W as run_stages_for_one_beta(beta)
-    participant T as torch.distributed.launch
+    participant T as torch.distributed.run
     participant B as BDRateReporter
 
     M->>M: version_check() — print torch/CUDA/cuDNN versions
@@ -124,8 +124,9 @@ sequenceDiagram
 Training writes one checkpoint per epoch per beta. `main()` runs the whole thing inside a
 `tempfile.TemporaryDirectory()` and copies the result out to `--train_url` every 30 seconds
 with `smart_copy_tree()`. The trainer itself deletes everything in its output directory except
-`best.pth` and `val_results.json` before saving each new epoch — so the run needs disk for two
-checkpoints per beta at a time, and the accumulated history ends up under `--train_url`.
+`best.pth`, `val_results.json` and `last.ckpt` before saving each new epoch — so the run needs
+disk for three checkpoints per beta at a time (`last.ckpt` also holds the optimizer state), and
+the accumulated history ends up under `--train_url`.
 
 `--copy_to_train_url_dir` runs in the other direction: it seeds the temporary directory
 *before* training starts. Combined with `--resume_from_stage`, this is how you continue from
@@ -194,7 +195,10 @@ stdout log for the literal string `end of train`, printed by
 - with `--automatic_resume_on_crash 1` (the default) it lists the stage output directory,
   finds the highest-numbered `<epoch>.pth`, and relaunches with
   `--resume <that file> --resume_opt 1` — so the optimizer state, the epoch counter and the
-  best-loss watermark all survive;
+  best-loss watermark all survive. The trainer resumes from the Lightning checkpoint
+  `last.ckpt` of the stage when it is not older than that file (exact resume: optimizer,
+  scheduler and loop state); otherwise it restores the optimizer from the `.pth` and replays the
+  scheduler (section 10);
 - with `--automatic_resume_on_crash 0` it raises `subprocess.CalledProcessError`.
 
 Each stage gets a fresh free TCP port (`find_free_port()`) for the DDP rendezvous, so
@@ -414,31 +418,56 @@ Stage IV also passes `--add_random_noise_for_quantization_y 1`, which **no code 
 
 ## 7. Layer 3 — the trainer
 
-`src/train/CCS/acc_train/multistages_train/train.py` is six lines of substance:
+`src/train/CCS/acc_train/multistages_train/train.py` runs one stage with
+[PyTorch Lightning](https://lightning.ai/docs/pytorch/1.9.5/). The pieces live in
+`src/train/CCS/acc_train/lightning/`:
+
+| Class | File | Role |
+| --- | --- | --- |
+| `CCSLightningModule` | `module.py` | Wraps `Net`: training step (manual optimization, AMP fallback), validation, data collection, optimizer and scheduler |
+| `CCSDataModule` | `datamodule.py` | Training and validation datasets, loaders and `DistributedSampler`s |
+| `PerSubmoduleDDPStrategy` | `strategy.py` | `DDPStrategy` that keeps the per-sub-network DDP of `Net` (below) |
+| `StageOutputs` | `callbacks.py` | Validation table, `val_results.json`, TensorBoard scalars, `<epoch>.pth`/`best.pth`, `last.ckpt` |
+| `AutomaticTesting` | `callbacks.py` | The inference test of section 11 |
 
 ```python
 args = get_args()
-multi_process_env_init(args)
-train_loader, val_loader = get_data_loader(args)
-net = ddp_model_init(Net, args)
-optimizer = init_optimizer(args, net)
-scheduler = set_lr_scheduler(optimizer, 8, train_loader, args)
-criterion = set_criterion(reg_loss_weight=args.l1)
-train(train_loader, val_loader, net, criterion, optimizer, scheduler, args)
+set_random(args.seed)                      # identical initial weights in every process
+module = CCSLightningModule(Net(args), args, legacy_resume=...)   # Net.resume_weight(--resume)
+trainer = pl.Trainer(strategy=PerSubmoduleDDPStrategy(timeout=7200 s), precision=32,
+                     max_epochs=args.epochs, callbacks=[StageOutputs, AutomaticTesting], ...)
+trainer.fit(module, datamodule=CCSDataModule(args), ckpt_path=<last.ckpt when resuming>)
 ```
 
 `print('start of train')` and `print('end of train')` bracket it — the second is the launcher's
-success signal.
+success signal. `--collect_only` runs `trainer.predict` twice over the training loader instead
+of `trainer.fit` (section 10).
+
+The repository pins `torch==1.10.2`; the newest Lightning release for it is
+`pytorch-lightning==1.9.5` (in `requirements.txt`). The code also runs with Lightning 2.x
+(`lightning` or `pytorch-lightning` package) if torch is upgraded; `lightning/compat.py` hides
+the differences.
 
 ### 7.1 Process group
 
-`multi_process_env_init()` initialises `nccl` (or `gloo` without CUDA) with a **7200-second**
-timeout, sets `args.local_rank` from the rank, pins the CUDA device, and seeds
-`random`, `numpy`, `torch`, `PYTHONHASHSEED` and both CUDA generators from `--seed`.
+Lightning initialises the process group — `nccl` (or `gloo` without CUDA) with a
+**7200-second** timeout — from the environment set by `torch.distributed.run`; the number of
+processes per node is taken from `LOCAL_WORLD_SIZE`. Started directly (`python -m …train`),
+the trainer runs as a single process. Before the model is built, `set_random(--seed)` seeds
+`random`, `numpy`, `torch`, `PYTHONHASHSEED` and both CUDA generators.
 `cudnn.deterministic = False` and `cudnn.benchmark = False` — deterministic mode is *not*
-requested, so runs are not bit-exact reproducible.
+requested, so runs are not bit-exact reproducible on GPUs.
 
-The seed is re-derived every epoch as `set_random(args.seed + epoch)`.
+The seed is re-derived every epoch as `set_random(args.seed + epoch)` in
+`on_train_epoch_start`, before the epoch's data iterator is created.
+
+**DDP per sub-network.** `CCSLightningModule.setup()` moves `Net` to the device and calls
+`Net.DDP()`, which wraps each of the 15 sub-networks into its own `DistributedDataParallel`
+(with `SyncBatchNorm` when there is more than one process; a `DummyDDP` that only provides
+`.module` with a single process). A training step may run the forward/backward pass twice for
+the same batch (the fp32 re-run below), which one DDP wrapper around the whole module does not
+allow — so `PerSubmoduleDDPStrategy` leaves the `LightningModule` unwrapped and Lightning only
+manages the processes, devices, collectives, loggers and checkpoints.
 
 ### 7.2 Data
 
@@ -461,12 +490,14 @@ flowchart LR
   — short side > 1024 → 1024; else short side > 512 → 512; else 512. It never upscales
   (`custom_resize` returns the image unchanged if it already matches).
 - `CustomCrop(size, num)` takes `--crop_number` random `--crop_size` × `--crop_size` crops and
-  returns them as a list; the `Lambda` stacks them, so the effective batch is
+  returns them as a list; `StackCrops` stacks them, so the effective batch is
   `batch_size × crop_number` images.
 - `CustomToTensor` produces a float tensor in **[0, 255]**, not [0, 1] — the codec works in
   sample units throughout.
 - Validation asserts `len(val_dataset) % world_size == 0`. A validation list whose length is
   not a multiple of the GPU count aborts the run.
+- The samplers are created by `CCSDataModule` (default seed, as before), so the Trainer is
+  created with Lightning's automatic sampler replacement disabled.
 - `--overfit` replaces the whole training transform with `CustomToTensor` — full images, no
   crop, no flip. Combined with `--rec_dir` it writes a reconstruction per validation step, so
   you can watch a single image converge.
@@ -603,7 +634,7 @@ both the `enable_gvae` and plain paths, but luma skipping is only reachable thro
 
 ### 8.4 Parameter groups and `--frozen_part`
 
-`Net.parameters()` returns four lists:
+`Net.parameter_groups()` returns four lists:
 
 | Group | Modules |
 | --- | --- |
@@ -658,40 +689,46 @@ shipped schedule does not use.
 
 ```mermaid
 flowchart TB
-    START["train()"] --> RESUME{"--resume_opt?"}
-    RESUME -->|yes| REPLAY["load optimizer + epoch + best_loss,<br/>replay the scheduler epoch by epoch"]
-    RESUME -->|no| PREVAL["validation pass before training<br/>→ val_results.json"]
-    REPLAY --> COLLECT
-    PREVAL --> COLLECT
-    COLLECT{"--collect_only?"} -->|yes| DC["two-pass data_collection(),<br/>save, return"]
-    COLLECT -->|no| EPOCH
+    START["train.py main()"] --> COLLECT{"--collect_only?"}
+    COLLECT -->|yes| DC["trainer.predict() twice over the training loader<br/>(min/max, then histograms; rank 0),<br/>set clip thresholds, save &lt;start_epoch&gt;.pth + best.pth"]
+    COLLECT -->|no| RESUME{"--resume_opt?"}
+    RESUME -->|"yes, last.ckpt is current"| CKPT["trainer.fit(ckpt_path=last.ckpt)<br/>restores optimizer, scheduler, epoch, best_loss"]
+    RESUME -->|"yes, only &lt;epoch&gt;.pth"| REPLAY["load optimizer + epoch + best_loss,<br/>replay the scheduler epoch by epoch"]
+    RESUME -->|no| PREVAL["sanity check = full validation pass<br/>row 'Before train' → val_results.json"]
+    CKPT --> EPOCH
+    REPLAY --> EPOCH
+    PREVAL --> EPOCH
 
-    EPOCH["for epoch in start_epoch..epochs"] --> SEED["set_random(seed + epoch)"]
-    SEED --> TRAIN1["train_one_epoch()"]
-    TRAIN1 --> VAL["validation()"]
+    EPOCH["for epoch in start_epoch..epochs"] --> SEED["on_train_epoch_start:<br/>set_random(seed + epoch), epoch-level scheduler step,<br/>new GradScaler"]
+    SEED --> TRAIN1["training_step() per batch"]
+    TRAIN1 --> VAL["validation_step() per image"]
     VAL --> GATHER["all_gather the meters<br/>across ranks"]
     GATHER --> BEST{"val Loss below best?"}
     BEST -->|yes| MARK["best_loss = it"]
     BEST -->|no| SAVE
-    MARK --> SAVE["rank 0: print table,<br/>write val_results.json,<br/>delete old epoch files,<br/>save &lt;epoch&gt;.pth (+ best.pth)"]
-    SAVE --> TEST{"--use_automatic_testing<br/>and epoch % period == 0?"}
+    MARK --> SAVE["StageOutputs (rank 0): print table,<br/>write val_results.json and TensorBoard,<br/>delete old epoch files,<br/>save &lt;epoch&gt;.pth (+ best.pth); all ranks: last.ckpt"]
+    SAVE --> TEST{"AutomaticTesting:<br/>epoch % period == 0?"}
     TEST -->|yes| INFER["run the real encoder<br/>on --test_data_dir"]
     TEST -->|no| EPOCH
     INFER --> EPOCH
 ```
 
-Inside `train_one_epoch()`, per batch:
+The module uses **manual optimization** (`automatic_optimization = False`, `precision=32` in
+the Trainer — mixed precision is handled by the module itself). Inside
+`CCSLightningModule.training_step()`, per batch:
 
 1. Step the scheduler if `--lr_type` ends in `step`.
 2. **Sample a beta uniformly at random from `--beta_list`.** This is what makes the model
    variable-rate: within one epoch different batches optimise different points of the R-D
    curve.
-3. Forward under `autocast(enabled=--amp)`.
+3. Forward under `autocast(enabled=--amp)` (AMP is used on GPUs only).
 4. `all_gather` the loss across ranks and check for NaN. If any rank saw NaN, re-run the batch
    with AMP off. If more than **2 %** of the epoch's batches hit NaN, disable AMP for the rest
    of the epoch.
-5. Backward through `GradScaler`, `unscale_`, **clip gradients to norm 10** per module, step.
-6. Check the scaler for inf/NaN gradients across all ranks; if found, redo the batch in fp32.
+5. Backward (`manual_backward`) through `GradScaler`, `unscale_`, **clip gradients to norm 10**
+   per module, step.
+6. Check the scaler for inf/NaN gradients across all ranks; if found, skip the AMP update and
+   redo the batch in fp32.
 7. Keep the loss scale at **≥ 2048** (`if scaler.get_scale() < 2048: scaler.update(2048.0)`).
 8. Every `--print_freq` batches (rank 0) print `Time lr rd_loss reg_loss scale`.
 
@@ -701,13 +738,14 @@ not random, so the metric is comparable across epochs. It reports:
 `Rate`, `Hyper_rate`, `Y_PSNR`, `U_PSNR`, `V_PSNR`, `MSE`, `MSSSIM`, `Loss`
 
 as a `PrettyTable`, cumulative across epochs, printed and written to `val_results.json` after
-every epoch. TensorBoard receives the same values under `<key>/train` and `<key>/validation`
-in `<train_url>/tensorboard/<stage>/<beta>/`.
+every epoch. TensorBoard (Lightning's `TensorBoardLogger`) receives the same values under
+`<key>/train` and `<key>/validation` in `<train_url>/tensorboard/<stage>/<beta>/`.
 
-Two hard stops worth knowing: `if count_trained_epochs == 100 and not args.overfit: exit()`
-caps any single stage at 100 epochs regardless of `--epochs`, and the rank-0 cleanup deletes
-every file in the stage output directory except `best.pth` and `val_results.json` before each
-save — so only the newest epoch checkpoint and the best one survive locally.
+Two hard stops worth knowing: a process that has trained 100 epochs exits (`sys.exit()`, unless
+`--overfit`), which caps any single run of a stage at 100 epochs regardless of `--epochs`, and
+the rank-0 cleanup deletes every file in the stage output directory except `best.pth`,
+`val_results.json` and `last.ckpt` before each save — so only the newest epoch checkpoint and
+the best one survive locally.
 
 ## 11. Automatic testing during training
 
@@ -855,7 +893,7 @@ Every option `get_args()` defines. "Launcher" means the launcher forwards it to 
 | Option | Type / default | Effect |
 | --- | --- | --- |
 | `--resume` | str, `''` | Checkpoint to load. Set automatically per stage by the launcher |
-| `--resume_opt` | bool, `False` | Also restore optimizer state, epoch and best loss, and replay the scheduler. Set by the crash-resume path |
+| `--resume_opt` | bool, `False` | Also restore optimizer state, epoch and best loss: from the stage's `last.ckpt` when it is current, otherwise from `--resume` with a replay of the scheduler. Set by the crash-resume path |
 | `--resume_from_stage` | str, `None` | Start the first stage from `{train_url}/{stage}/{beta}/best.pth` |
 | `--copy_to_train_url_dir` | str, `''` | Seed the working directory from here before training (pairs with `--resume_from_stage`) |
 | `--automatic_resume_on_crash` | bool, `True` | Relaunch a stage from its latest epoch instead of failing |
@@ -956,6 +994,7 @@ train_results/
 ├── <stage>/<beta>/
 │   ├── best.pth                                lowest validation loss in the stage
 │   ├── <epoch>.pth                             the most recent epoch only
+│   ├── last.ckpt                               Lightning checkpoint of the most recent epoch (crash resume)
 │   ├── val_results.json                        the cumulative validation table
 │   └── <epoch>_test/<beta>/                    automatic-test results, if enabled
 └── <stage>/results/epoch<N>/                   merged four-beta summary + BD-rate
@@ -988,8 +1027,8 @@ python -m src.reco.scripts.eval \
 - **The default run does not test.** `--use_automatic_testing` defaults to `False` and
   `scripts/train.sh` does not set it. Add `--use_automatic_testing 1 --generate_test_summary 1`
   to get the BD-rate tracking described in section 11.
-- **Validation set size must divide the GPU count**, or the `assert` in `get_data_loader()`
-  fires before the first epoch.
+- **Validation set size must divide the GPU count**, or the `assert` in
+  `CCSDataModule.setup()` fires before the first epoch.
 - **Runs are not bit-exact.** `cudnn.deterministic` is explicitly `False`, and the per-batch
   beta is drawn from `np.random` after a per-epoch reseed.
 - **A stage silently stops at 100 epochs** (`exit()`), regardless of `--epochs`. The shipped

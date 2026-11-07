@@ -32,6 +32,7 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -187,7 +188,7 @@ def run_stages_for_one_beta(beta, args, beta_2_gpus, train_cfg):
         distributed_launch_cmd = [
             sys.executable,
             '-m',
-            'torch.distributed.launch',
+            'torch.distributed.run',
             f'--nproc_per_node={num_gpus}',
             '--master_addr=127.0.0.1',
             f'--master_port={port}',
@@ -247,10 +248,8 @@ def run_stages_for_one_beta(beta, args, beta_2_gpus, train_cfg):
                 else:
                     print(f'Failed train for {stage}, beta {beta}. Restarting')
                     if os.path.isdir(epoch_out_dir):
-                        epoch_models = os.listdir(epoch_out_dir)
-                        # remove tests and best from listing
-                        epoch_models = [file for file in epoch_models if 'test' not in file]
-                        epoch_models = [file for file in epoch_models if 'best' not in file]
+                        # only '<epoch>.pth' files (skip best.pth, last.ckpt, val_results.json, tests)
+                        epoch_models = [file for file in os.listdir(epoch_out_dir) if re.fullmatch(r'\d+\.pth', file)]
                         finished_epochs = [int(file.split('.pth')[0]) for file in epoch_models]
                         if finished_epochs:
                             last_epoch = sorted(finished_epochs)[-1]

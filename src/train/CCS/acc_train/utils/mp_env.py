@@ -31,16 +31,14 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-import datetime
 import os
 import random
 
 import numpy
 import torch
 import torch.backends.cudnn as cudnn
-import torch.distributed as dist
 
-__all__ = ['multi_process_env_init', 'set_random']
+__all__ = ['set_random']
 
 
 def set_random(seed):
@@ -53,15 +51,3 @@ def set_random(seed):
         torch.cuda.manual_seed_all(seed)
         cudnn.deterministic = False
         cudnn.benchmark = False
-
-
-def multi_process_env_init(args):
-    dist.init_process_group(backend='nccl' if torch.cuda.is_available() else 'gloo', timeout=datetime.timedelta(seconds=7200))
-    args.local_rank = dist.get_rank()
-    if torch.cuda.device_count():
-        torch.cuda.set_device(args.local_rank)
-    if args.seed is not None:
-        if torch.cuda.device_count():
-            cudnn.deterministic = False
-            cudnn.benchmark = False
-        set_random(args.seed)

@@ -30,5 +30,28 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
+"""DDP strategy for ``Net``."""
 
-from .loader import get_data_loader
+from torch.nn import Module
+
+from .compat import pl
+
+__all__ = ['PerSubmoduleDDPStrategy']
+
+
+class PerSubmoduleDDPStrategy(pl.strategies.DDPStrategy):
+    """``DDPStrategy`` that does not wrap the whole ``LightningModule`` into DDP.
+
+    ``Net`` wraps each of its sub-networks into its own ``DistributedDataParallel``
+    (see ``Net.DDP``, called from ``CCSLightningModule.setup``). The training step can run the
+    forward/backward pass twice for the same batch (fp32 re-run after an AMP overflow), which a
+    single DDP wrapper around the whole module does not allow. Lightning still manages the process
+    group, devices, samplers, collectives, checkpoints and loggers.
+    """
+
+    def _setup_model(self, model: Module) -> Module:
+        return model
+
+    def _register_ddp_hooks(self) -> None:
+        # communication hooks are registered on a DistributedDataParallel module, there is none here
+        return

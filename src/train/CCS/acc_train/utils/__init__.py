@@ -32,6 +32,6 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 
 from .get_args import get_args
-from .model_init import ddp_model_init
-from .model_train import train
-from .mp_env import multi_process_env_init
+from .mp_env import set_random
+
+__all__ = ['get_args', 'set_random']
