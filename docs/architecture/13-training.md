@@ -45,7 +45,7 @@ Concretely, for the shipped configuration one `make train` becomes:
 
 - **1** launcher process,
 - **4** worker processes (one per beta: 0.002, 0.012, 0.075, 0.5),
-- **5** sequential stages inside each worker,
+- **4** sequential stages inside each worker,
 - **2** DDP trainer processes per stage (`beta_2_gpus` gives each beta two GPUs),
 
 so the shipped `cfg/train.json` assumes **8 GPUs**.
@@ -155,8 +155,8 @@ Three consequences worth knowing:
   `--workers` are parsed by the launcher and then silently dropped. To change them you edit
   `cfg/train_stages.json`, where they *are* appended per stage — `--epochs`, `--lr`,
   `--anneal_final_lr`, `--base_warmup_epoch`, `--loss_type`, `--msssim_weight`,
-  `--loss_factors`, `--beta_list`, `--frozen_part`, `--enable_gvae`, `--cal_entropy_on_val`
-  and `--collect_only` all arrive that way. (`--base_warmup_epoch`, `--lr` and
+  `--loss_factors`, `--beta_list`, `--frozen_part`, `--enable_gvae` and `--cal_entropy_on_val`
+  all arrive that way. (`--base_warmup_epoch`, `--lr` and
   `--anneal_final_lr` are the exception: the template reads the launcher's values through
   `args.…` and substitutes them when they are not `None`.)
 - **`--cube_flag_thre` is overridden for the top rate:** the launcher passes
@@ -254,7 +254,7 @@ The value is the `CUDA_VISIBLE_DEVICES` string for that worker; its length is
 ```
 
 The *upper* end of the variable-rate range each model must cover. It becomes
-`--beta_list` in stages III, IV and V. `get_beta_list()` splits it on commas, so this may be
+`--beta_list` in stages III and IV. `get_beta_list()` splits it on commas, so this may be
 a list; the shipped configuration gives a single value per model, and stage II uses the
 nominal beta alone.
 
@@ -307,7 +307,7 @@ jpegai_training_7000scc/04853_TR_4928x3264_28.png
 
 ```json
 ["MSE_FixedRate_64", "Mixed_FixedRate_36", "Mixed_FixedRate_OnlyDec_20",
- "MSE_VariableRate_12", "Data_Collection"]
+ "MSE_VariableRate_12"]
 ```
 
 Executed in order. Each stage resumes from the previous stage's `best.pth`; the first stage
@@ -339,7 +339,7 @@ ${ if beta == 0.002: }$ "synthesis", ${ :end-if }$
 
 The first gives every stage a default that a launcher `--lr` can override globally. The second
 branches the stage definition on the beta — the lowest-rate model is treated differently in
-stages III, IV and V.
+stages III and IV.
 
 Rendering happens **once per stage per beta**, so the same file yields four different argument
 lists.
@@ -360,7 +360,7 @@ lists.
 
 Numbers may be JSON numbers; the launcher stringifies every element before `Popen`.
 
-## 6. The five stages
+## 6. The four stages
 
 ```mermaid
 flowchart LR
@@ -368,27 +368,25 @@ flowchart LR
     S2["II<br/>Mixed_FixedRate_36<br/>36 epochs"]
     S3["III<br/>Mixed_FixedRate_OnlyDec_20<br/>20 epochs"]
     S4["IV<br/>MSE_VariableRate_12<br/>12 epochs"]
-    S5["V<br/>Data_Collection<br/>1 epoch, no training"]
 
-    S1 -->|best.pth| S2 -->|best.pth| S3 -->|best.pth| S4 -->|best.pth| S5
+    S1 -->|best.pth| S2 -->|best.pth| S3 -->|best.pth| S4
 ```
 
-Total: 132 training epochs per beta, plus a two-pass statistics sweep.
+Total: 132 training epochs per beta.
 
-| Setting | I `MSE_FixedRate_64` | II `Mixed_FixedRate_36` | III `Mixed_FixedRate_OnlyDec_20` | IV `MSE_VariableRate_12` | V `Data_Collection` |
-| --- | --- | --- | --- | --- | --- |
-| `--epochs` | 64 | 36 | 20 | 12 | 1 |
-| `--loss_type` | `mse` | `mix` | `mix` | `mix` | `mix` |
-| `--beta_list` | the nominal beta | the nominal beta | `beta_2_betaList` | `beta_2_betaList` | `beta_2_betaList` |
-| `--lr` | `1e-3` | `1e-4` | `1e-4` | `1e-4` (fixed) | `1e-4` (fixed) |
-| `--anneal_final_lr` | `1e-4` | `1e-5` | `1e-5` | `1e-5` (fixed) | `1e-5` (fixed) |
-| `--base_warmup_epoch` | 1.0 | 0.1 | 0.1 | 0.1 | 0.1 |
-| `--msssim_weight` | — | `beta_2_msssim_weight` | same | same | same |
-| `--loss_factors` | — | `beta_2_loss_factors` | same | same | same |
-| `--frozen_part` | `gain_unit` | `gain_unit` | `gain_unit` **only for beta 0.002** | `analysis entropy` (+ `synthesis` for beta 0.002) | `gain_unit` |
-| `--enable_gvae` | — | — | `0` for beta 0.002, else `1` | `0` for beta 0.002, else `1` | — |
-| `--cal_entropy_on_val` | — | — | — | `1` | — |
-| `--collect_only` | — | — | — | — | `1` |
+| Setting | I `MSE_FixedRate_64` | II `Mixed_FixedRate_36` | III `Mixed_FixedRate_OnlyDec_20` | IV `MSE_VariableRate_12` |
+| --- | --- | --- | --- | --- |
+| `--epochs` | 64 | 36 | 20 | 12 |
+| `--loss_type` | `mse` | `mix` | `mix` | `mix` |
+| `--beta_list` | the nominal beta | the nominal beta | `beta_2_betaList` | `beta_2_betaList` |
+| `--lr` | `1e-3` | `1e-4` | `1e-4` | `1e-4` (fixed) |
+| `--anneal_final_lr` | `1e-4` | `1e-5` | `1e-5` | `1e-5` (fixed) |
+| `--base_warmup_epoch` | 1.0 | 0.1 | 0.1 | 0.1 |
+| `--msssim_weight` | — | `beta_2_msssim_weight` | same | same |
+| `--loss_factors` | — | `beta_2_loss_factors` | same | same |
+| `--frozen_part` | `gain_unit` | `gain_unit` | `gain_unit` **only for beta 0.002** | `analysis entropy` (+ `synthesis` for beta 0.002) |
+| `--enable_gvae` | — | — | `0` for beta 0.002, else `1` | `0` for beta 0.002, else `1` |
+| `--cal_entropy_on_val` | — | — | — | `1` |
 
 Reading the schedule as a story:
 
@@ -404,14 +402,11 @@ Reading the schedule as a story:
    transform is frozen too, so the stage only trains the gain unit.
    `--cal_entropy_on_val 1` turns on the channel-wise entropy accumulation used for
    progressive-decoding channel ordering.
-5. **V — collect activation statistics.** `--collect_only 1` short-circuits `train()`: no
-   optimisation happens, the loop runs twice over the training set to gather per-channel
-   min/max and then a 1000-bin histogram for the five analysis-transform stages
-   (`E1B…E5B` / `E1H…E5H`) and the five hyper-encoder stages (`HE1…HE5`), trims the extreme
-   100 samples from each tail, and stores the result as `clip_thres` on the modules before
-   saving the checkpoint. These are the clipping bounds the integer/quantised inference path
-   needs — see [11 — Evaluation and testing](11-evaluation-and-testing.md) and
-   `docs/md/quantization.md`.
+
+The training does not produce activation clipping thresholds (`clip_thres` of the encoders,
+used by `feature_clipping` in the codec): they are dropped when a checkpoint is loaded with
+`--resume` and are not written to the stage checkpoints, so a trained model runs without
+feature clipping unless thresholds are added to it separately.
 
 Stage IV also passes `--add_random_noise_for_quantization_y 1`, which **no code reads**.
 `get_args()` uses `parse_known_args()`, so it is accepted and discarded.
@@ -424,7 +419,7 @@ Stage IV also passes `--add_random_noise_for_quantization_y 1`, which **no code 
 
 | Class | File | Role |
 | --- | --- | --- |
-| `CCSLightningModule` | `module.py` | Wraps `Net`: training step (manual optimization, AMP fallback), validation, data collection, optimizer and scheduler |
+| `CCSLightningModule` | `module.py` | Wraps `Net`: training step (manual optimization, AMP fallback), validation, optimizer and scheduler |
 | `CCSDataModule` | `datamodule.py` | Training and validation datasets, loaders and `DistributedSampler`s |
 | `PerSubmoduleDDPStrategy` | `strategy.py` | `DDPStrategy` that keeps the per-sub-network DDP of `Net` (below) |
 | `StageOutputs` | `callbacks.py` | Validation table, `val_results.json`, TensorBoard scalars, `<epoch>.pth`/`best.pth`, `last.ckpt` |
@@ -440,8 +435,7 @@ trainer.fit(module, datamodule=CCSDataModule(args), ckpt_path=<last.ckpt when re
 ```
 
 `print('start of train')` and `print('end of train')` bracket it — the second is the launcher's
-success signal. `--collect_only` runs `trainer.predict` twice over the training loader instead
-of `trainer.fit` (section 10).
+success signal.
 
 The repository pins `torch==1.10.2`; the newest Lightning release for it is
 `pytorch-lightning==1.9.5` (in `requirements.txt`). The code also runs with Lightning 2.x
@@ -689,9 +683,7 @@ shipped schedule does not use.
 
 ```mermaid
 flowchart TB
-    START["train.py main()"] --> COLLECT{"--collect_only?"}
-    COLLECT -->|yes| DC["trainer.predict() twice over the training loader<br/>(min/max, then histograms; rank 0),<br/>set clip thresholds, save &lt;start_epoch&gt;.pth + best.pth"]
-    COLLECT -->|no| RESUME{"--resume_opt?"}
+    START["train.py main()"] --> RESUME{"--resume_opt?"}
     RESUME -->|"yes, last.ckpt is current"| CKPT["trainer.fit(ckpt_path=last.ckpt)<br/>restores optimizer, scheduler, epoch, best_loss"]
     RESUME -->|"yes, only &lt;epoch&gt;.pth"| REPLAY["load optimizer + epoch + best_loss,<br/>replay the scheduler epoch by epoch"]
     RESUME -->|no| PREVAL["sanity check = full validation pass<br/>row 'Before train' → val_results.json"]
@@ -897,7 +889,6 @@ Every option `get_args()` defines. "Launcher" means the launcher forwards it to 
 | `--resume_from_stage` | str, `None` | Start the first stage from `{train_url}/{stage}/{beta}/best.pth` |
 | `--copy_to_train_url_dir` | str, `''` | Seed the working directory from here before training (pairs with `--resume_from_stage`) |
 | `--automatic_resume_on_crash` | bool, `True` | Relaunch a stage from its latest epoch instead of failing |
-| `--collect_only` | bool, `False` | Skip training; run the two-pass activation-statistics collection and save. Stages |
 | `--cal_entropy_on_val` | bool, `False` | Accumulate per-channel entropy of the residual during validation, for progressive-decoding channel order. Stages |
 | `--overfit` | flag, off | Full images, no augmentation, no 100-epoch cap, reconstructions written to `--rec_dir`. Launcher |
 | `--train_cfg_json` | str, `cfg/train.json` | Launcher-only |

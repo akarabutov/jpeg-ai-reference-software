@@ -91,26 +91,6 @@ def get_beta_list(args):
     return beta_list, model_beta_list
 
 
-def getStat(feature, stat, first_pass=True):
-    n,c,h,w = feature.shape
-    if first_pass:
-        if stat['MaxList'] == []:
-            for i in range(c):
-                stat['MaxList'].append(torch.max(feature[:,i,:,:]).cpu().item())
-                stat['MinList'].append(torch.min(feature[:,i,:,:]).cpu().item())
-        else:
-            for i in range(c):
-                stat['MaxList'][i] = max(torch.max(feature[:,i,:,:]).cpu().item(), stat['MaxList'][i])
-                stat['MinList'][i] = min(torch.min(feature[:,i,:,:]).cpu().item(), stat['MinList'][i])
-    else:
-        bin_num = 1000
-        if stat['StaList'] == []:
-            stat['StaList'] = np.zeros((c, bin_num)).tolist()
-        for i in range(c):
-            fea = feature[:,i,:,:].contiguous().view(-1)
-            cnts = torch.histc(fea, bins=bin_num, min=stat['MinList'][i], max=stat['MaxList'][i])
-            stat['StaList'][i] = np.sum([stat['StaList'][i], cnts.cpu().tolist()], axis=0).tolist()
-
 class DummyDDP(nn.Module):
     def __init__(self, module, *args, **kwargs):
         super(DummyDDP, self).__init__()
@@ -133,31 +113,10 @@ class MultiCoder(nn.Module):
     def count(self):
         return len(self.coders)        
     
-    def forward(self, img: torch.Tensor, h:int, w:int, *args, **kwargs) -> Tuple[torch.Tensor]:
+    def forward(self, img: torch.Tensor, h:int, w:int, *args, **kwargs) -> torch.Tensor:
         ans = list()
-        is_collect = kwargs.get('is_collect', False)
-        if not is_collect:
-            for coder in self.coders.values():
-                ans.append(coder(img, h=h, w=w, *args, **kwargs)[..., :h, :w])
-        else:
-            stat = kwargs.pop('stat', None)
-            first_pass = kwargs.pop('first_pass', True)
-            for name, coder in self.coders.items():
-                x1, x2, x3, x4, x = coder(img, h=h, w=w, *args, **kwargs)
-                ans.append(x[..., :h, :w])
-                if 'bop' in name:
-                    getStat(x1, stat['E1B'], first_pass)
-                    getStat(x2, stat['E2B'], first_pass)
-                    getStat(x3, stat['E3B'], first_pass)
-                    getStat(x4, stat['E4B'], first_pass)
-                    getStat(x, stat['E5B'], first_pass)
-                elif 'hop' in name:
-                    getStat(x1, stat['E1H'], first_pass)
-                    getStat(x2, stat['E2H'], first_pass)
-                    getStat(x3, stat['E3H'], first_pass)
-                    getStat(x4, stat['E4H'], first_pass)
-                    getStat(x, stat['E5H'], first_pass)
-            return torch.cat(ans, dim=0), stat
+        for coder in self.coders.values():
+            ans.append(coder(img, h=h, w=w, *args, **kwargs)[..., :h, :w])
         return torch.cat(ans, dim=0)
 
 class Net(nn.Module):
@@ -427,6 +386,8 @@ class Net(nn.Module):
         epoch = checkpoint.get('epoch', -1)
 
         checkpoint = self.remove_keys(checkpoint, ["epoch", "best_loss", "optimizer"])
+        # activation clipping thresholds of the encoders are not used by the training
+        checkpoint = self.remove_keys(checkpoint, [k for k in checkpoint if k.endswith('clip_thres')])
         if _is_distributed():
             torch.distributed.barrier()
 
@@ -460,6 +421,9 @@ class Net(nn.Module):
         })
         s = self.state_dict()
         for k in list(s.keys()):
+            if k.endswith('clip_thres'):  # not produced by the training
+                del s[k]
+                continue
             if 'module.' in k:
                 new_k = k.replace('module.', '')
                 s[new_k] = s.pop(k)
@@ -1146,7 +1110,7 @@ class Net(nn.Module):
         self.channel_wise_entropy_Y += entropy_Y.squeeze()
         self.channel_wise_entropy_UV += entropy_UV.squeeze()
 
-    def _val_forward_to_loss(self, net_input, n_rate, ft, criterion, beta, args, amp=False, is_collect=False, stat_Y=None, stat_UV=None, first_pass=False):
+    def _val_forward_to_loss(self, net_input, n_rate, ft, criterion, beta, args, amp=False):
 
         with torch.set_grad_enabled(False):
             # for tiling of Y
@@ -1219,10 +1183,7 @@ class Net(nn.Module):
                 for image_tile, latent_tile in zip(tile_manager_Y.image_tiles,
                                                    tile_manager_Y.latent_tiles):
                     image_tile_data = tiling.get_data(xInput_Y, image_tile)
-                    if not is_collect:
-                        y_tile = self.encoder_Y(image_tile_data, alfa=1, h=image_tile.size.height, w=image_tile.size.width)
-                    else:
-                        y_tile, stat_Y = self.encoder_Y(image_tile_data, alfa=1, h=image_tile.size.height, w=image_tile.size.width, is_collect=True, stat=stat_Y, first_pass=first_pass)
+                    y_tile = self.encoder_Y(image_tile_data, alfa=1, h=image_tile.size.height, w=image_tile.size.width)
 
                     # assign tile feature, but leave out features at boundaries by not using
                     # part of overlapped regions
@@ -1232,10 +1193,7 @@ class Net(nn.Module):
                     tiling.assign_data(y_Y, assigned_tile, assigned_data)
 
             else:
-                if not is_collect:
-                    y_Y = self.encoder_Y(xInput_Y, alfa=1, h=h_i, w=w_i)
-                else:
-                    y_Y, stat_Y = self.encoder_Y(xInput_Y, alfa=1, h=h_i, w=w_i, is_collect=True, stat=stat_Y, first_pass=first_pass)
+                y_Y = self.encoder_Y(xInput_Y, alfa=1, h=h_i, w=w_i)
 
             #################### encoder UV ###########################
             xInput_UV = net_input['xInput_UV']
@@ -1245,10 +1203,7 @@ class Net(nn.Module):
                 for image_tile, latent_tile in zip(tile_manager_UV.image_tiles,
                                                    tile_manager_UV.latent_tiles):
                     image_tile_data = tiling.get_data(xInput_UV, image_tile)
-                    if not is_collect:
-                        y_tile = self.encoder_UV(image_tile_data, alfa=1, h=image_tile.size.height, w=image_tile.size.width)
-                    else:
-                        y_tile, stat_UV = self.encoder_UV(image_tile_data, alfa=1, h=image_tile.size.height, w=image_tile.size.width, is_collect=True, stat=stat_UV, first_pass=first_pass)
+                    y_tile = self.encoder_UV(image_tile_data, alfa=1, h=image_tile.size.height, w=image_tile.size.width)
 
                     # assign tile feature, but leave out features at boundaries by not using
                     # part of overlapped regions
@@ -1259,55 +1214,21 @@ class Net(nn.Module):
 
             else:
                 if args.color == '420':
-                    if not is_collect:
-                        y_UV = self.encoder_UV(xInput_UV,
-                                               alfa=1,
-                                               h=h_i2,
-                                               w=w_i2)
-                    else:
-                        y_UV, stat_UV = self.encoder_UV(xInput_UV,
-                                                        alfa=1,
-                                                        h=h_i2,
-                                                        w=w_i2, 
-                                                        is_collect=True, stat=stat_UV, first_pass=first_pass)
+                    y_UV = self.encoder_UV(xInput_UV,
+                                           alfa=1,
+                                           h=h_i2,
+                                           w=w_i2)
                 else:
-                    if not is_collect:
-                        y_UV = self.encoder_UV(xInput_UV, alfa=1, h=h_i, w=w_i)
-                    else:
-                        y_UV, stat_UV = self.encoder_UV(xInput_UV, alfa=1, h=h_i, w=w_i, is_collect=True, stat=stat_UV, first_pass=first_pass)
+                    y_UV = self.encoder_UV(xInput_UV, alfa=1, h=h_i, w=w_i)
 
             #y_UV = self.func_encoder_UV(y_UV, n_rate, ft)
  
             #################### hyper encoder/decoder Y, UV ###########################
-            if not is_collect:
-                z_Y = self.hyper_encoder_Y(y_Y, h=h_i, w=w_i)
-            else:
-                z1, z2, z3, z4, z_Y = self.hyper_encoder_Y(y_Y, h=h_i, w=w_i, is_collect=True)
-                getStat(z1, stat_Y['HE1'], first_pass)
-                getStat(z2, stat_Y['HE2'], first_pass)
-                getStat(z3, stat_Y['HE3'], first_pass)
-                getStat(z4, stat_Y['HE4'], first_pass)
-                getStat(z_Y, stat_Y['HE5'], first_pass)
+            z_Y = self.hyper_encoder_Y(y_Y, h=h_i, w=w_i)
             if args.color == '420':
-                if not is_collect:
-                    z_UV = self.hyper_encoder_UV(y_UV, h=h_i2, w=w_i2)
-                else:
-                    z1, z2, z3, z4, z_UV = self.hyper_encoder_UV(y_UV, h=h_i2, w=w_i2, is_collect=True)
-                    getStat(z1, stat_UV['HE1'], first_pass)
-                    getStat(z2, stat_UV['HE2'], first_pass)
-                    getStat(z3, stat_UV['HE3'], first_pass)
-                    getStat(z4, stat_UV['HE4'], first_pass)
-                    getStat(z_UV, stat_UV['HE5'], first_pass)
+                z_UV = self.hyper_encoder_UV(y_UV, h=h_i2, w=w_i2)
             else:
-                if not is_collect:
-                    z_UV = self.hyper_encoder_UV(y_UV, h=h_i, w=w_i)
-                else:
-                    z1, z2, z3, z4, z_UV = self.hyper_encoder_UV(y_UV, h=h_i, w=w_i, is_collect=True)
-                    getStat(z1, stat_UV['HE1'], first_pass)
-                    getStat(z2, stat_UV['HE2'], first_pass)
-                    getStat(z3, stat_UV['HE3'], first_pass)
-                    getStat(z4, stat_UV['HE4'], first_pass)
-                    getStat(z_UV, stat_UV['HE5'], first_pass)
+                z_UV = self.hyper_encoder_UV(y_UV, h=h_i, w=w_i)
 
             z_hat_Y = z_Y.round()
             z_hat_UV = z_UV.round()
@@ -1385,21 +1306,10 @@ class Net(nn.Module):
                                       beta,
                                       args,
                                       is_train=False)
-            if not is_collect:
-                if args.overfit:
-                    rec_data = dict()
-                    rec_data['xY'] = xY_reco
-                    rec_data['xCb'] = xU_reco 
-                    rec_data['xCr'] = xV_reco
-                    val_infos['rec_data'] = rec_data
-                return val_infos
-            else:
-                return stat_Y, stat_UV
-
-    def data_collection_forward(self, x, criterion, beta, args, stat_Y, stat_UV, first_pass=True, amp=False):
-        n_rate, ft = self._nrate_n_ft(beta)
-
-        net_input = self._preprocess(x, args, is_train=True)
-        if 'skip' in net_input:
-            return None
-        return self._val_forward_to_loss(net_input, n_rate, ft, criterion, beta, args, amp, is_collect=True, stat_Y=stat_Y, stat_UV=stat_UV, first_pass=first_pass)
+            if args.overfit:
+                rec_data = dict()
+                rec_data['xY'] = xY_reco
+                rec_data['xCb'] = xU_reco 
+                rec_data['xCr'] = xV_reco
+                val_infos['rec_data'] = rec_data
+            return val_infos

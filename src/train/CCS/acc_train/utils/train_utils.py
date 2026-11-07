@@ -31,25 +31,16 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Helpers shared by the Lightning training of CCS: meters, the result table and the
-statistics of the data collection stage."""
+"""Helpers of the Lightning training of CCS: meters and the result table."""
 
 import json
 
-import numpy as np
 import torch
 from prettytable import PrettyTable
 
 from src.train.CCS.utils import AverageMeter
 
-__all__ = [
-    'ResultPrinter', 'create_meters', 'update_meters', 'print_meters', 'has_nan', 'get_thres',
-    'set_clip_thres', 'create_collection_stat', 'COLLECTION_KEYS'
-]
-
-COLLECTION_KEYS = ('E1B', 'E2B', 'E3B', 'E4B', 'E5B',
-                   'E1H', 'E2H', 'E3H', 'E4H', 'E5H',
-                   'HE1', 'HE2', 'HE3', 'HE4', 'HE5')
+__all__ = ['ResultPrinter', 'create_meters', 'update_meters', 'print_meters', 'has_nan']
 
 
 def has_nan(tensor_list):
@@ -149,50 +140,3 @@ def print_meters(meters_dict, keys=['Time'], prefix=''):
         else:
             row += f'{key} {meters_dict[key].val:.4f}({meters_dict[key].avg:.4f}) '
     print(row)
-
-
-def idx_to_num(idx, min, max, bin_num):
-    intv = (max - min) / bin_num
-    num = min + idx * intv
-    return num
-
-
-def get_thres(stat, remv_num):
-    stat_thres = dict.fromkeys(stat.keys(), {})
-    for layer in stat:
-        hist = np.array(stat[layer]['StaList'])
-        if hist.shape[0] == 0:
-            continue
-        c, bins = hist.shape
-
-        stat_thres[layer] = dict.fromkeys(('MaxList', 'MinList'), [])
-        stat_thres[layer]['MaxList'] = np.zeros(c)                
-        stat_thres[layer]['MinList'] = np.zeros(c)                
-
-        for ch in range(c):
-            total_num = np.sum(hist[ch])
-            hist_cum = np.cumsum(hist[ch])
-            num_upper = total_num - remv_num
-            num_lower = remv_num
-
-            upper_idx = np.searchsorted(hist_cum, num_upper, side='left')
-            lower_idx = np.searchsorted(hist_cum, num_lower, side='right')
-            stat_thres[layer]['MaxList'][ch] = min(idx_to_num(upper_idx + 1, stat[layer]['MinList'][ch], stat[layer]['MaxList'][ch], 1000), stat[layer]['MaxList'][ch])
-            stat_thres[layer]['MinList'][ch] = max(idx_to_num(lower_idx, stat[layer]['MinList'][ch], stat[layer]['MaxList'][ch], 1000), stat[layer]['MinList'][ch])
-        
-        stat_thres[layer]['MaxList'] = stat_thres[layer]['MaxList'].tolist()
-        stat_thres[layer]['MinList'] = stat_thres[layer]['MinList'].tolist()
-
-    return stat_thres
-
-
-def set_clip_thres(m, stat, key_list):
-    m.clip_thres = dict()
-    for k, v in stat.items():
-        if k in key_list:
-            m.clip_thres[k] = v 
-
-
-def create_collection_stat():
-    """Empty statistics of the data collection stage (one per component: Y or UV)."""
-    return {key: {'MaxList': [], 'MinList': [], 'StaList': []} for key in COLLECTION_KEYS}

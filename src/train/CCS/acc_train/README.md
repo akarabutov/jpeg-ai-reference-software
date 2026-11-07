@@ -18,7 +18,7 @@ A stage is trained by `multistages_train/train.py` with [PyTorch Lightning](http
 with a newer torch). The Lightning parts are in [lightning](lightning):
 
 - `module.py` — `CCSLightningModule`: training step with manual optimization (AMP with the fp32 fallback,
-  per-sub-network gradient clipping, random beta per step), validation, data collection (`--collect_only`);
+  per-sub-network gradient clipping, random beta per step) and validation;
 - `datamodule.py` — `CCSDataModule`: datasets, loaders and distributed samplers;
 - `strategy.py` — `PerSubmoduleDDPStrategy`: DDP strategy keeping the per-sub-network DDP of `model/net.py`;
 - `callbacks.py` — `StageOutputs` (validation table, `val_results.json`, TensorBoard, `<epoch>.pth`, `best.pth`,

@@ -180,9 +180,6 @@ def run_stages_for_one_beta(beta, args, beta_2_gpus, train_cfg):
     for stage in stages_lst:
         config = train_stages[stage]
         port = find_free_port()
-        if stage == "Data_Collection":
-            assigned_gpus = str(beta_2_gpus[beta].split(',')[0])
-            num_gpus = len(assigned_gpus.split(','))
 
         # DDP setup
         distributed_launch_cmd = [

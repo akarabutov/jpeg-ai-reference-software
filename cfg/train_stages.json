@@ -81,27 +81,5 @@
             1,
             "--enable_gvae",
             ${ if beta == 0.002: }$ 0 ${ :else: }$ 1 ${ :end-if }$
-        ], 
-    "Data_Collection":
-        [
-            "--beta_list",
-            ${ beta_list_stageIII_IV }$,
-            "--epochs",
-            1,
-            "--loss_type",
-            "mix",
-            "--msssim_weight",
-            ${ msssim_weight }$,
-            "--loss_factors",
-            "${ loss_factors }$",
-            "--base_warmup_epoch",
-            ${ if args.base_warmup_epoch is None: }$ 0.1 ${ :else: }$ ${ write(args.base_warmup_epoch) }$ ${ :end-if }$,
-            "--lr",
-            1e-4,
-            "--anneal_final_lr",
-            1e-5,
-            "--frozen_part", "gain_unit",
-            "--collect_only", 
-            1
         ]        
 }

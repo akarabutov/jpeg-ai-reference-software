@@ -57,8 +57,7 @@ In the file [cfg/train.json](cfg/train.json) you can set the following parameter
         "MSE_FixedRate_64",
         "Mixed_FixedRate_36",
         "Mixed_FixedRate_OnlyDec_20",
-        "MSE_VariableRate_12", 
-        "Data_Collection"
+        "MSE_VariableRate_12"
     ]
 ```
   tasks description one can find in the file [cfg/train_satges.json](cfg/train_satges.json).

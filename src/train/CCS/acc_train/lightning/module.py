@@ -47,9 +47,8 @@ from src.train.CCS.acc_train.graph_utils.loss import set_criterion
 from src.train.CCS.acc_train.graph_utils.lr_scheduler import set_lr_scheduler
 from src.train.CCS.acc_train.graph_utils.optimizer import init_optimizer
 from src.train.CCS.acc_train.utils.mp_env import set_random
-from src.train.CCS.acc_train.utils.train_utils import (create_collection_stat, create_meters,
-                                                       get_thres, has_nan, print_meters,
-                                                       set_clip_thres, update_meters)
+from src.train.CCS.acc_train.utils.train_utils import (create_meters, has_nan, print_meters,
+                                                       update_meters)
 
 from .compat import pl, recreate_train_iterator_if_created
 
@@ -106,9 +105,6 @@ class CCSLightningModule(pl.LightningModule):
         self._epoch_start_time = None
         self._train_time = None
         self._val_meters_local = None
-        self._collect_first_pass = True
-        self._stat_Y = None
-        self._stat_UV = None
 
     # ##################################################################################################################
     #  setup
@@ -332,62 +328,9 @@ class CCSLightningModule(pl.LightningModule):
                 print(f'Best so far is epoch {self.current_epoch}')
 
     # ##################################################################################################################
-    #  data collection (statistics for clipping thresholds of the encoders)
-    # ##################################################################################################################
-    def start_data_collection_pass(self, first_pass: bool) -> None:
-        self._collect_first_pass = first_pass
-        if first_pass:
-            self._stat_Y, self._stat_UV = create_collection_stat(), create_collection_stat()
-            print('enter first pass: collect maximum & minimum values')
-        else:
-            print('enter second pass: collect freuqency distribution')
-
-    def on_predict_epoch_start(self) -> None:
-        self.net.set_eval_mode()
-        torch.cuda.empty_cache()
-        gc.collect()
-
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        if self.global_rank != 0:  # only the first process collects the statistics
-            return None
-        _, x = batch
-        beta = self.net.beta_list[batch_idx % len(self.net.beta_list)]
-        self._stat_Y, self._stat_UV = self.net.data_collection_forward(
-            x, self.criterion, beta, self.args, self._stat_Y, self._stat_UV,
-            first_pass=self._collect_first_pass, amp=False)
-        if batch_idx % self.args.print_freq == 0:
-            num_batches = self.trainer.num_predict_batches[dataloader_idx]
-            print(f'[{batch_idx}/{num_batches}]')
-        return None
-
-    def finish_data_collection(self) -> None:
-        """Set the clipping thresholds of the encoders from the collected statistics."""
-        print("remove extreme values")
-        stat_Y_process = get_thres(self._stat_Y, 100)
-        stat_UV_process = get_thres(self._stat_UV, 100)
-        net = self.net
-        for name in net.encoder_Y.module.coders.keys():
-            if 'bop' in name:
-                set_clip_thres(net.encoder_Y.module.coders['bop_prim'], stat_Y_process, ['E1B', 'E2B', 'E3B', 'E4B', 'E5B'])
-                set_clip_thres(net.encoder_UV.module.coders['bop_sec'], stat_UV_process, ['E1B', 'E2B', 'E3B', 'E4B', 'E5B'])
-            elif 'hop' in name:
-                set_clip_thres(net.encoder_Y.module.coders['hop_prim'], stat_Y_process, ['E1H', 'E2H', 'E3H', 'E4H', 'E5H'])
-                set_clip_thres(net.encoder_UV.module.coders['hop_sec'], stat_UV_process, ['E1H', 'E2H', 'E3H', 'E4H', 'E5H'])
-        set_clip_thres(net.hyper_encoder_Y.module, stat_Y_process, ['HE1', 'HE2', 'HE3', 'HE4', 'HE5'])
-        set_clip_thres(net.hyper_encoder_UV.module, stat_UV_process, ['HE1', 'HE2', 'HE3', 'HE4', 'HE5'])
-
-    # ##################################################################################################################
     #  legacy checkpoints
     # ##################################################################################################################
     def save_legacy_checkpoint(self, optimizer, epoch: int, is_best: bool) -> None:
         """Write ``<epoch>.pth`` (and ``best.pth``) to ``--train_url`` in the format of the original training."""
         self.net.save_model_and_opt(self.args, epoch, optimizer, self.best_loss,
                                     model_prefix=str(epoch), is_best=is_best)
-
-    def build_optimizer_for_export(self, train_loader):
-        """Optimizer (with the learning rate set by the scheduler) for stages without training."""
-        optimizer = init_optimizer(self.args, self.net)
-        scheduler = set_lr_scheduler(optimizer, BASE_BATCH_SIZE, train_loader, self.args)
-        if self.legacy_resume is not None:
-            self._restore_legacy_optimizer(optimizer, scheduler, len(train_loader))
-        return optimizer

@@ -90,13 +90,6 @@ def get_args(args_list = None):
         'if true, both optimizer and weights are loaded. if 0 only weights of args.resume is loaded'
     )
     parser.add_argument(
-        '--collect_only',
-        type=str2bool,
-        default=False,
-        help=
-        'if true, data collection process will be executed after training'
-    )
-    parser.add_argument(
         '--automatic_resume_on_crash',
         type=str2bool,
         default=True,

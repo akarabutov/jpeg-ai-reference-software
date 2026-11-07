@@ -33,7 +33,6 @@
         "MSE_FixedRate_64",
         "Mixed_FixedRate_36",
         "Mixed_FixedRate_OnlyDec_20",
-        "MSE_VariableRate_12",
-        "Data_Collection"
+        "MSE_VariableRate_12"
     ]
 }

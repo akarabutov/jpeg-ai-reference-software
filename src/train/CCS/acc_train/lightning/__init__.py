@@ -32,7 +32,7 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 """PyTorch Lightning based training of the CCS codec models.
 
-* :class:`CCSLightningModule` - training/validation/data-collection steps around ``model.Net``;
+* :class:`CCSLightningModule` - training and validation steps around ``model.Net``;
 * :class:`CCSDataModule` - training and validation datasets;
 * :class:`PerSubmoduleDDPStrategy` - DDP strategy keeping the per-sub-network DDP of ``Net``;
 * callbacks writing the legacy outputs of a stage (``<epoch>.pth``, ``best.pth``,

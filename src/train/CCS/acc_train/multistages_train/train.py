@@ -39,7 +39,6 @@ stdout must contain ``end of train``: the launcher restarts a stage which did no
 """
 
 import os
-import time
 from datetime import timedelta
 from pathlib import Path
 
@@ -121,26 +120,6 @@ def _create_net(args):
     return net
 
 
-def run_data_collection(args, legacy_resume):
-    """Collect statistics of the encoder activations and store the clipping thresholds."""
-    datamodule = CCSDataModule(args)
-    module = CCSLightningModule(_create_net(args), args, legacy_resume=legacy_resume)
-    trainer = _create_trainer(args, callbacks=[], logger=False)
-    start_epoch = args.start_epoch if legacy_resume is None else legacy_resume['epoch']
-
-    data_collect_time0 = time.time()
-    for first_pass in (True, False):
-        module.start_data_collection_pass(first_pass)
-        datamodule.setup('predict')
-        trainer.predict(module, dataloaders=datamodule.train_dataloader(), return_predictions=False)
-    if trainer.is_global_zero:
-        module.finish_data_collection()
-        optimizer = module.build_optimizer_for_export(datamodule.train_dataloader())
-        module.save_legacy_checkpoint(optimizer, start_epoch, is_best=True)
-        print(f'Time of data collection is {time.time() - data_collect_time0} seconds')
-    trainer.strategy.barrier()
-
-
 def run_training(args, legacy_resume):
     ckpt_path = _select_lightning_checkpoint(args, legacy_resume)
     if ckpt_path is not None:
@@ -165,11 +144,7 @@ def main():
     # the same initialisation of the weights in every process
     set_random(args.seed)
     args.local_rank = int(os.environ.get('LOCAL_RANK', 0))
-    legacy_resume = _load_legacy_resume(args)
-    if args.collect_only:
-        run_data_collection(args, legacy_resume)
-    else:
-        run_training(args, legacy_resume)
+    run_training(args, _load_legacy_resume(args))
     print('end of train')
 
 
