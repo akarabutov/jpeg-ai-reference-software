@@ -796,7 +796,7 @@ Every option `get_args()` defines. "Launcher" means the launcher forwards it to 
 | `--val_lst` | str, `''` | Validation list. Its length must be divisible by the GPU count. Launcher |
 | `--test_data_dir` | str, `{cwd}/data/test` | Images for the automatic inference test. Copied into a temporary directory by the launcher. Launcher |
 | `--train_url` | str, `''` | Final output directory. The launcher rewrites it per stage to `{tmp}/{stage}/{beta}` |
-| `--rec_dir` | str, `''` | Write one validation reconstruction per epoch here. Forced to `''` unless `--overfit`. Launcher |
+| `--rec_dir` | str, `''` | Write the validation reconstructions here, one PNG per decoder/encoder pair: `iter_<epoch>_<dec>Dec_<enc>Enc.png` (epoch `-1` is the validation before training; every validation image overwrites the previous one). Forced to `''` unless `--overfit`. Launcher |
 | `--workers` | int, 10 | `DataLoader` worker processes for the training loader. Not forwarded |
 | `--crop_size` | int, 320 | Random-crop side. Not forwarded — set it in the stage file |
 | `--crop_number` | int, 1 | Crops per source image; multiplies the effective batch. Not forwarded |

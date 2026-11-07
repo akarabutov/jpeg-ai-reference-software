@@ -297,13 +297,25 @@ class CCSLightningModule(pl.LightningModule):
         update_meters(x.shape[0], self._val_meters_local, val_ret)
 
     def _store_reconstruction(self, rec_data):
+        """Write the reconstructions of a validation image (``--overfit`` with ``--rec_dir``).
+
+        The decoder outputs are stacked along the batch dimension: for every decoder (outer loop) the
+        latents of every encoder (inner loop). One PNG per decoder/encoder pair is written:
+        ``iter_<epoch>_<dec>Dec_<enc>Enc.png`` (epoch -1 is the validation before training).
+        """
         import os
 
         from src.codec.common import Image
-        img = Image.create_from_tensors(rec_data['xY'], rec_data['xCb'], rec_data['xCr'], [0, 255], color_space='yuv')
+        dec_types, enc_types = self.args.vae_decoder_type_list, self.args.vae_encoder_type_list
+        num_images = rec_data['xY'].shape[0] // (len(dec_types) * len(enc_types))
         os.makedirs(self.args.rec_dir, exist_ok=True)
         epoch = -1 if self.trainer.sanity_checking else self.current_epoch
-        img.write_file(os.path.join(self.args.rec_dir, f"iter_{epoch:06d}.png"))
+        for dec_idx, dec in enumerate(dec_types):
+            for enc_idx, enc in enumerate(enc_types):
+                i = (dec_idx * len(enc_types) + enc_idx) * num_images  # first image of the batch
+                img = Image.create_from_tensors(rec_data['xY'][i:i + 1], rec_data['xCb'][i:i + 1],
+                                                rec_data['xCr'][i:i + 1], [0, 255], color_space='yuv')
+                img.write_file(os.path.join(self.args.rec_dir, f"iter_{epoch:06d}_{dec}Dec_{enc}Enc.png"))
 
     def _merge_meters(self, meters):
         """Merge the averages of the meters over all processes (weighted by the counts)."""
