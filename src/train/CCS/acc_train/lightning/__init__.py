@@ -40,6 +40,7 @@
 """
 
 from .callbacks import AutomaticTesting, StageOutputs
+from .checkpoint_io import DirectCheckpointIO
 from .compat import pl
 from .datamodule import CCSDataModule
 from .module import CCSLightningModule
@@ -47,5 +48,5 @@ from .strategy import PerSubmoduleDDPStrategy
 
 __all__ = [
     'pl', 'CCSLightningModule', 'CCSDataModule', 'PerSubmoduleDDPStrategy', 'StageOutputs',
-    'AutomaticTesting'
+    'AutomaticTesting', 'DirectCheckpointIO'
 ]

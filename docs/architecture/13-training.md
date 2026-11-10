@@ -141,18 +141,19 @@ stage's own arguments. Exactly these launcher options reach the trainer this way
 --hyper_decoder_type --hyper_scale_decoder_type --mse_weight --beta --use_automatic_testing
 --automatic_testing_epoch_period --enable_gvae --amp --sigma_quant_level --sigma_quant_max
 --sigma_quant_min --cube_flag_thre --loss_weights --l1 --opt_type --skip_thre --rec_dir
+--workers --crop_size --max_pic_area_in_validation
 --cfg_path --vae_encoder_type_list --vae_decoder_type_list`,
 plus `--frozen_part` when non-empty and `--overfit` when set.
 
 Three consequences worth knowing:
 
-- **Options not in that list never reach the trainer from the command line.** `--crop_size`,
-  `--workers`, `--epochs`, `--lr`, `--wd`, `--color`, `--bh`, `--N_G`, `--entropy`,
+- **Options not in that list never reach the trainer from the command line.**
+  `--epochs`, `--lr`, `--wd`, `--color`, `--bh`, `--N_G`, `--entropy`,
   `--print_freq`, `--save_epoch`, `--best_n`, `--patience`, `--factor`, `--lr_steps`,
   `--lr_type`, `--scale_bound`, `--start_epoch`, `--crop_number`, `--sym_flag`,
-  `--sigma_bound_offset`, `--N_Y`, `--max_pic_area_in_validation`, `--cal_entropy_on_val`,
-  `--zero_redundancy_optimizer`, `--cuda_empty_cash_each_batch`, `--use_scc_dataset` and
-  `--workers` are parsed by the launcher and then silently dropped. To change them you edit
+  `--sigma_bound_offset`, `--N_Y`, `--cal_entropy_on_val`,
+  `--zero_redundancy_optimizer`, `--cuda_empty_cash_each_batch` and `--use_scc_dataset`
+  are parsed by the launcher and then silently dropped. To change them you edit
   `cfg/train_stages.json`, where they *are* appended per stage — `--epochs`, `--lr`,
   `--anneal_final_lr`, `--base_warmup_epoch`, `--loss_type`, `--msssim_weight`,
   `--loss_factors`, `--beta_list`, `--frozen_part`, `--enable_gvae` and `--cal_entropy_on_val`
@@ -1037,6 +1038,45 @@ python -m src.reco.scripts.eval \
 `docs/md/checkpoints.md` covers this, plus updating and publishing checkpoints.
 
 ## 16. Reproducing a run — practical notes
+
+### Running with little memory (CPU, e.g. a container limited to 2 GB)
+
+Without a GPU the weights, the gradients and the Adam state live in the memory of the process
+(about 0.6 GB for the default operating points), and the activations of a step add much more:
+the default `--batch_size 8 --crop_size 320` needs many gigabytes. What fits into 2 GB
+(measured in the project image, `torch` 1.10.2, 4 threads):
+
+| Operating points | `--batch_size` × `--crop_size` | Peak memory |
+| --- | --- | --- |
+| default (BOP+HOP encoders, BOP+HOP+SOP decoders) | 2 × 128 | 1.0 GB |
+| default | 4 × 128 | 1.2 GB |
+| default | 1 × 256 or 2 × 192 | 1.8–1.9 GB (at the limit) |
+| default | 2 × 256, 1 × 320 and bigger | out of memory |
+| BOP only (`--vae_encoder_type_list bop --vae_decoder_type_list bop --loss_weights 1`) | 2 × 320 | 0.9 GB |
+| BOP only | 8 × 320 | 1.7 GB |
+
+- **Use `--workers 0`.** A worker of a data loader is forked from the training process; while it
+  is alive, every page of the weights and of the optimizer state changed by the training is
+  duplicated (copy-on-write), which costs one more copy of the model state on CPU (2 × 128 with
+  `--workers 2`: 1.6 GB instead of 1.0 GB). With `--workers 0` the validation loader does not
+  start its worker either. The loaders release their workers right after the last batch of an
+  epoch (`WorkersReleasingDataLoader`), so no worker stays alive across the phases of an epoch.
+- **Limit the validation pictures** with `--max_pic_area_in_validation <samples>`: a picture of
+  1 megapixel does not fit into 2 GB (bigger pictures are skipped; if every picture is skipped,
+  the validation fails with an explicit error).
+- `last.ckpt` is written directly to the file (`DirectCheckpointIO`); the default checkpoint IO
+  of Lightning keeps two copies of the serialized checkpoint (about 0.6 GB each) in memory.
+- The automatic test runs the encoder of the codec next to the training process: 2 × 128 with
+  `--use_automatic_testing 1` peaks at 1.9 GB.
+- Two processes (`--nproc_per_node=2`) with the default operating points do not fit into 2 GB
+  (each process holds its own copy of the model); with BOP only they do (0.9 GB).
+- The codec itself (encoder and decoder, CPU) needs about 0.7–0.8 GB for small pictures.
+
+`--workers`, `--crop_size`, `--batch_size` and `--max_pic_area_in_validation` given to the
+launcher are forwarded to every stage, e.g.
+`python -m scripts.acc_train_scripts.acc_train_local … --batch_size 2 --crop_size 128 --workers 0`.
+
+### Other notes
 
 - **8 GPUs, or edit `beta_2_gpus`.** The shipped configuration assumes four betas × two cards.
 - **NVIDIA Apex is not vendored.** `scripts/build_train_libs.sh` ends with

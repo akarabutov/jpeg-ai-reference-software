@@ -34,3 +34,10 @@ python -m src.train.CCS.acc_train.multistages_train.train --data_dir <DIR> --lst
 
 or on several GPUs with `python -m torch.distributed.run --nproc_per_node=<N> -m src.train.CCS.acc_train.multistages_train.train ...`.
 See [docs/architecture/13-training.md](../../../../docs/architecture/13-training.md) for details.
+
+### Running without a GPU / with little memory
+
+On CPU the default settings need many gigabytes of memory. In a container limited to 2 GB use small inputs and no
+loader workers, e.g. `--batch_size 2 --crop_size 128 --workers 0` (about 1 GB), and skip big validation pictures with
+`--max_pic_area_in_validation <samples>`. See "Running with little memory" in
+[docs/architecture/13-training.md](../../../../docs/architecture/13-training.md) for what fits.

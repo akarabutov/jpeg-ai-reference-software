@@ -145,6 +145,13 @@ def run_stages_for_one_beta(beta, args, beta_2_gpus, train_cfg):
         f'{args.skip_thre}',
         '--rec_dir',
         f'{args.rec_dir}',
+        # the memory footprint of a stage (e.g. to run in a container with little memory)
+        '--workers',
+        f'{args.workers}',
+        '--crop_size',
+        f'{args.crop_size}',
+        '--max_pic_area_in_validation',
+        f'{args.max_pic_area_in_validation}',
         '--cfg_path'
     ]
     common_parameters += args.cfg_path

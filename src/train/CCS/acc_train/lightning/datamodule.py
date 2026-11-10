@@ -69,6 +69,52 @@ def train_transform(args):
     ])
 
 
+class _WorkersReleasingIterator:
+    """Iterator of a dataloader which stops the worker processes right after the last batch is taken."""
+    def __init__(self, iterator, length: int):
+        self._iterator = iterator
+        self._length = length
+        self._remaining = length
+
+    def __iter__(self):
+        return self
+
+    def __len__(self):
+        return self._length
+
+    def __next__(self):
+        if self._iterator is None:
+            raise StopIteration
+        batch = next(self._iterator)
+        self._remaining -= 1
+        if self._remaining <= 0:
+            self._iterator = None  # the iterator is deleted: its worker processes are shut down
+        return batch
+
+    def __getattr__(self, name):
+        # called only for attributes which are not found here
+        if name == '_iterator' or self._iterator is None:
+            raise AttributeError(name)
+        return getattr(self._iterator, name)
+
+
+class WorkersReleasingDataLoader(DataLoader):
+    """``DataLoader`` which releases its worker processes as soon as an epoch of data is consumed.
+
+    The worker processes of a ``DataLoader`` exit when its iterator is exhausted or deleted. Lightning knows the
+    number of batches and does not ask for a batch after the last one, so the workers of the training loader
+    stayed alive during the validation and the workers of the validation loader during a part of the next
+    epoch. A worker is forked from the training process; while it is alive every page of the weights and of the
+    optimizer state changed by the training is duplicated (copy-on-write), i.e. on CPU the lingering workers
+    cost a copy of the model state each. Here the iterator is deleted right after the last batch.
+    """
+    def __iter__(self):
+        iterator = super().__iter__()
+        if self.num_workers == 0:
+            return iterator
+        return _WorkersReleasingIterator(iterator, len(self))
+
+
 class CCSDataModule(pl.LightningDataModule):
     """Data of one training stage.
 
@@ -101,20 +147,24 @@ class CCSDataModule(pl.LightningDataModule):
     def train_dataloader(self) -> DataLoader:
         world_size, rank = self._world()
         sampler = DistributedSampler(self.train_dataset, num_replicas=world_size, rank=rank, shuffle=True)
-        return DataLoader(self.train_dataset,
-                          batch_size=self.args.batch_size,
-                          num_workers=self.args.workers,
-                          pin_memory=True,
-                          sampler=sampler)
+        return WorkersReleasingDataLoader(self.train_dataset,
+                                          batch_size=self.args.batch_size,
+                                          num_workers=self.args.workers,
+                                          pin_memory=True,
+                                          sampler=sampler)
 
     def val_dataloader(self) -> DataLoader:
         world_size, rank = self._world()
         sampler = DistributedSampler(self.val_dataset, num_replicas=world_size, rank=rank, shuffle=False)
-        return DataLoader(self.val_dataset,
-                          batch_size=1,
-                          num_workers=1,
-                          pin_memory=False,
-                          sampler=sampler)
+        # One worker reads the next picture while the current one is processed. With `--workers 0` no worker
+        # process is used at all: a worker is forked from the training process, and while it is alive every
+        # page of the weights changed by the training is duplicated (copy-on-write), which matters when the
+        # model is trained on CPU with little memory.
+        return WorkersReleasingDataLoader(self.val_dataset,
+                                          batch_size=1,
+                                          num_workers=min(1, self.args.workers),
+                                          pin_memory=False,
+                                          sampler=sampler)
 
     def steps_per_epoch(self) -> int:
         """Number of training batches per process and epoch."""

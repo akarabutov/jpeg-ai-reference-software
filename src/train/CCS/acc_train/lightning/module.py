@@ -324,7 +324,11 @@ class CCSLightningModule(pl.LightningModule):
             local = torch.tensor([meter.avg, meter.count], dtype=torch.float32, device=self.device)
             gathered = self.all_gather(local).reshape(-1, 2)
             for avg, count in gathered.tolist():
-                merged[key].update(avg, count)
+                if count > 0:  # a process may have skipped all its pictures (--max_pic_area_in_validation)
+                    merged[key].update(avg, count)
+        if any(meter.count == 0 for meter in merged.values()):
+            raise RuntimeError('No picture was validated: all pictures of the validation set are bigger than '
+                               f'--max_pic_area_in_validation ({self.args.max_pic_area_in_validation} samples)')
         return merged
 
     def on_validation_epoch_end(self) -> None:

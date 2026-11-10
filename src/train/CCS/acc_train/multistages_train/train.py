@@ -44,7 +44,7 @@ from pathlib import Path
 
 import torch
 
-from ..lightning import (AutomaticTesting, CCSDataModule, CCSLightningModule,
+from ..lightning import (AutomaticTesting, CCSDataModule, CCSLightningModule, DirectCheckpointIO,
                          PerSubmoduleDDPStrategy, StageOutputs, pl)
 from ..lightning.callbacks import LAST_CKPT_NAME
 from ..lightning.compat import no_sampler_replacement_kwargs
@@ -94,6 +94,7 @@ def _create_trainer(args, callbacks, logger, num_sanity_val_steps=0):
         max_epochs=args.epochs,
         logger=logger,
         callbacks=callbacks,
+        plugins=[DirectCheckpointIO()],  # last.ckpt is written without a copy in memory
         num_sanity_val_steps=num_sanity_val_steps,
         enable_checkpointing=False,  # StageOutputs writes the checkpoints
         enable_progress_bar=False,
