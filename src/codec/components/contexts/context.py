@@ -33,7 +33,6 @@
 
 import os
 import torch
-import einops
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Union, Tuple, Dict
@@ -242,21 +241,11 @@ class Context(nn.Module, ContextUtils):
     def gen_skip_cubeflag(self, y_hat: torch.Tensor, y_org: torch.Tensor, stage_id_cur, h_ls, w_ls) -> torch.Tensor:
         diff_yhat = torch.abs(y_hat - y_org)
         diff_yhat = self._mask_redundant_padding_tensor(diff_yhat, stage_id_cur, h_ls, w_ls)
-        N, C, H, W = diff_yhat.shape
-        diff_yhat = diff_yhat.reshape(1, N, C, H, W)
-        cube_size = self.cube_size
-        cube_chan = self.cube_chan
-        h_pad = ((H + cube_size - 1) // cube_size) * cube_size - H
-        w_pad = ((W + cube_size - 1) // cube_size) * cube_size - W
-        diff_yhat = F.pad(diff_yhat, (0, w_pad, 0, h_pad), value=0)
-        maxpool = torch.nn.MaxPool3d((cube_chan, cube_size, cube_size), (cube_chan, cube_size, cube_size), 0)
-        cubeflag = (maxpool(diff_yhat) > self.skip_cube_thr) # skip_mask = cubeflag ! skip_mask
-        cubeflag = ~cubeflag[0,:,:,:,:]
-        return cubeflag
+        return ContextUtils.cube_flags_from_diff(diff_yhat, self.cube_chan, self.cube_size, self.skip_cube_thr)
 
     def convert_cubeflag_map(self, init_map: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:
         _,y_chan, y_hei, y_wid = output_shape
-        cube_flags_full = einops.repeat(init_map, 'a b c d -> a (b repeat1) (c repeat2) (d repeat3)', repeat1=y_chan, repeat2=self.cube_size, repeat3=self.cube_size)
+        cube_flags_full = ContextUtils.repeat_cube_flags(init_map, y_chan, self.cube_size)
         # TODO: check repeat is right?
         cube_flags_full = ~cube_flags_full[:, :y_chan, :y_hei, :y_wid]
         return cube_flags_full

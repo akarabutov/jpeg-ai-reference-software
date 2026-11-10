@@ -599,14 +599,15 @@ blocks only, not the plain convolutions.
 The residual path is `res = y − mean`, gain-scaled by `vr_vec`, then quantised. Three
 straight-through variants appear:
 
-| Helper | Forward | Gradient |
+| Helper (`QuantModule`, shared with the codec) | Forward | Gradient |
 | --- | --- | --- |
-| `addResiNoise()` | `round(x + U(−0.5, 0.5))` | identity |
-| `_round_with_detach()` | `round(x)` | identity |
-| `addZNoise()` | returns both a rounded value and a noisy one | identity |
+| `noise_ste()` | `x + (round(x + U(−0.5, 0.5)) − (x + U))`, i.e. the rounding error of the dithered value | identity |
+| `round_ste()` | `round(x)` | identity |
+| `round_masked_ste()` | zero the skipped elements, clip to an integer range, `round(x)` (used inside the context model) | identity |
 
-The hyper-latent always uses `addZNoise()`. The residual uses `addResiNoise()` for the
-likelihood computation, and:
+The hyper-latent uses both `round_ste()` (value passed to the hyper decoders) and `noise_ste()`
+(value the likelihood is estimated for). The residual uses `noise_ste()` for the likelihood
+computation, and:
 
 - **`--enable_gvae 0`** — the reconstruction is built from `y_hat` produced by the context
   model, and the luma residual keeps its noisy value.
@@ -614,17 +615,40 @@ likelihood computation, and:
   and the reconstruction is built from `dequantize(res) + mean` for both components. This is
   the "generalised VAE" path enabled from stage III on for every model except beta 0.002.
 
-**`--frozen_part entropy`** also changes the forward pass, not only the optimizer: it switches
-the luma likelihood input from the noisy residual to the hard-rounded one and uses the precise
-`y_hat`.
+**`--frozen_part entropy`** also changes the forward pass, not only the optimizer: by default the
+luma likelihood is computed for the hard-rounded residual and the reconstruction uses the precise
+`y_hat` of the context model; with the entropy part frozen the likelihood input stays noisy and
+`y_hat` only passes the gradient to `y`.
 
 **`--skip_thre`** (default `0.0`, i.e. off) enables latent skipping during training:
 positions whose predicted scale is `≤ skip_thre` are candidates, `_gen_skip_cubeflag()` groups
 them into 8×8×all-channels cubes and keeps a cube only if the maximum change it would cause is
 below `--cube_flag_thre`, and surviving positions get residual 0 and likelihood 1.0 (zero rate).
-The launcher forces `--cube_flag_thre 0.0` at beta 0.5. Note the chroma branch is skipped in
-both the `enable_gvae` and plain paths, but luma skipping is only reachable through
-`_decode_to_loss()` — the validation path.
+The launcher forces `--cube_flag_thre 0.0` at beta 0.5. Only the chroma residual is skipped (in
+both the `enable_gvae` and plain paths); the luma residual is not skipped in training.
+
+### 8.3.1 Code shared with the codec
+
+`Net` is a differentiable re-implementation of the codec pipeline: the engine of the codec
+(`src/codec/coding_tools/core_models/CCS_SGMM`) works with integer scales, bitstream syntax and
+configuration trees and cannot be used in a training step as is. Both are built from the same
+components, and the steps they have in common are implemented once, in `src/codec`:
+
+| Shared code | Used by the codec in | Used by the training in |
+| --- | --- | --- |
+| `TileManager` + `tiling.get_latent_shapes()` | set-up of the analysis/synthesis tile managers | `Net._setup_tile_managers()` |
+| `TileManager.assign_core_of_latent_tile()`, `analysis_by_tiles()`, `synthesis_by_tiles()` | `CommonEncDecModules.compress_colocated_tiles()` (core of a tile) | validation of big pictures (`Net._analysis()`, `Net._synthesis()`) |
+| `QuantModule.round_ste()`, `noise_ste()`, `round_masked_ste()` | `QuantModule.forward()`, `CommonEncDecModules.quant_dequant()` | quantization of `z` and of the residuals, `Net.quantize()` |
+| `ContextUtils.cube_flags_from_diff()`, `repeat_cube_flags()` | `Context`, `SkipModeCoder` | `Net._gen_skip_cubeflag()` |
+| `ContextUtils.hyper_to_mean()` | chroma prediction in `CommonEncDecModules` | `Net._context_path()` |
+| `GMProbModel.scale_log_step()`, `index_to_scale()` | grid of the scales (sigmas) | `Net._index_to_scale()`, gain unit |
+
+Inside `Net` the training and the validation passes share `_hyper_path()` (hyper analysis,
+quantization of `z`, hyper synthesis, scales), `_context_path()` (context model for luma, mean of
+chroma), `_y_likelihoods()` and `_rec_from_latent_code()`; they differ in the quantization (noise
+or rounding), the tiling (validation only) and the loss bookkeeping. The order of the operations
+in these functions defines the order the gradients are accumulated in, so re-ordering them changes
+the trained weights in the last bits.
 
 ### 8.4 Parameter groups and `--frozen_part`
 
@@ -725,7 +749,10 @@ the Trainer — mixed precision is handled by the module itself). Inside
 8. Every `--print_freq` batches (rank 0) print `Time lr rd_loss reg_loss scale`.
 
 Validation walks the validation loader with `beta = beta_list[istep % len(beta_list)]` — cyclic,
-not random, so the metric is comparable across epochs. It reports:
+not random, so the metric is comparable across epochs. Big pictures are processed by tiles with the
+`TileManager` of the codec (48 samples of overlap): the luma analysis and synthesis when the
+picture has more than 1024×1024 samples, the chroma transforms above 1 179 648 samples divided by
+the number of operating points. It reports:
 
 `Rate`, `Hyper_rate`, `Y_PSNR`, `U_PSNR`, `V_PSNR`, `MSE`, `MSSSIM`, `Loss`
 

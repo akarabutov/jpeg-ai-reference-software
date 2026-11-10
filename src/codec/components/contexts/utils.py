@@ -31,6 +31,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
+import einops
 import torch
 import numpy
 from typing import Tuple
@@ -92,6 +93,50 @@ class ContextUtils:
         data = torch.stack((part0, part1, part2, part3), dim=4).reshape(b, c, h, w, factor_hw, factor_hw)
         data = data.permute(0, 1, 2, 4, 3, 5).reshape(b, c, factor_hw * h, factor_hw * w)
         return data
+
+    @staticmethod
+    def cube_flags_from_diff(diff: torch.Tensor, cube_chan: int, cube_size: int, threshold: float) -> torch.Tensor:
+        """Flags of cubes (cube_chan x cube_size x cube_size elements) of a latent tensor where the skip
+        of the residual is allowed: a flag is set if no element of the cube changes more than the threshold.
+
+        Args:
+            diff (torch.Tensor): absolute change of the latent caused by the skip, shape [N, C, H, W]
+            cube_chan (int): number of channels of a cube
+            cube_size (int): spatial size of a cube
+            threshold (float): maximum allowed change of an element
+
+        Returns:
+            torch.Tensor: boolean flags, shape [N, C // cube_chan, ceil(H / cube_size), ceil(W / cube_size)]
+        """
+        N, C, H, W = diff.shape
+        diff = diff.reshape(1, N, C, H, W)
+        h_pad = ((H + cube_size - 1) // cube_size) * cube_size - H
+        w_pad = ((W + cube_size - 1) // cube_size) * cube_size - W
+        diff = torch.nn.functional.pad(diff, (0, w_pad, 0, h_pad), value=0)
+        maxpool = torch.nn.MaxPool3d((cube_chan, cube_size, cube_size), (cube_chan, cube_size, cube_size), 0)
+        cubeflag = (maxpool(diff) > threshold)  # skip_mask = cubeflag ! skip_mask
+        return ~cubeflag[0, :, :, :, :]
+
+    @staticmethod
+    def repeat_cube_flags(cube_flags: torch.Tensor, chan_repeat: int, cube_size: int) -> torch.Tensor:
+        """Expand flags of cubes (see `cube_flags_from_diff`) to flags of the elements of the cubes."""
+        return einops.repeat(cube_flags, 'a b c d -> a (b repeat1) (c repeat2) (d repeat3)',
+                             repeat1=chan_repeat, repeat2=cube_size, repeat3=cube_size)
+
+    @staticmethod
+    def hyper_to_mean(psi: torch.Tensor, height: int, width: int) -> torch.Tensor:
+        """Mean of the latent for a component coded without the context model.
+
+        Args:
+            psi (torch.Tensor): output of the hyper decoder, shape [N, 4 * C, ceil(H / 2), ceil(W / 2)]
+            height (int): height of the latent (H)
+            width (int): width of the latent (W)
+
+        Returns:
+            torch.Tensor: mean, shape [N, C, H, W]
+        """
+        return ContextUtils.up_shuffle(torch.chunk(psi, chunks=4, dim=1))[:, :, 0:height, 0:width]
+
 
 def Upsample_proc(inputs):
     ret = ContextUtils.up_shuffle(inputs)

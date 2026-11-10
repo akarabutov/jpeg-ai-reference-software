@@ -32,10 +32,11 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 
 import math
-from typing import Tuple
+from typing import Callable, Tuple
 
 import torch
 
+from src.codec.common import tiling
 from src.codec.common.tiling import Area, TileGrid, Position
 from src.codec.entropy_coding import HeaderCoder
 
@@ -683,6 +684,67 @@ class TileManager(CoderEngine):
             for idx_x in range(self.latent_tiles.columns):
                 yield TileIterObject(self, input_data, output_data, self.latent_tiles,
                                      self.image_tiles, self.is_enabled(), idx_x, idx_y)
+
+    def assign_core_of_latent_tile(self, output: torch.Tensor, tile_data: torch.Tensor, latent_tile: Area,
+                                   corresponding_image_tile: Area, tile_manager_hd: "TileManager" = None) -> None:
+        """Copy the core (the part without overlap) of a processed latent (y) tile to the output tensor.
+
+        Args:
+            output (torch.Tensor): tensor of the whole latent the tile belongs to
+            tile_data (torch.Tensor): data of the tile (with overlap)
+            latent_tile (Area): the tile in the latent domain
+            corresponding_image_tile (Area): the corresponding image tile
+            tile_manager_hd (TileManager, optional): see `get_core_of_overlapping_latent_tile`
+        """
+        core_tile, core_tile_rel_to_overlap = self.get_core_of_overlapping_latent_tile(
+            latent_tile, corresponding_image_tile, tile_manager_hd)
+        tiling.assign_data(output, core_tile, tiling.get_data(tile_data, core_tile_rel_to_overlap))
+
+    def assign_core_of_latent_tile_z(self, output: torch.Tensor, tile_data: torch.Tensor, latent_tile: Area,
+                                     corresponding_image_tile: Area, tile_manager_hd: "TileManager" = None) -> None:
+        """The same as `assign_core_of_latent_tile` for a tile of the hyper latent (z)."""
+        core_tile, core_tile_rel_to_overlap = self.get_core_of_overlapping_latent_tile_z(
+            latent_tile, corresponding_image_tile, tile_manager_hd)
+        tiling.assign_data(output, core_tile, tiling.get_data(tile_data, core_tile_rel_to_overlap))
+
+    def analysis_by_tiles(self, data: torch.Tensor, analysis_func: Callable, latent_shape: torch.Size,
+                          tile_manager_hd: "TileManager" = None) -> torch.Tensor:
+        """Apply an analysis transform tile by tile and merge the cores of the latent tiles.
+
+        Args:
+            data (torch.Tensor): input of the analysis transform (image domain)
+            analysis_func (Callable): `analysis_func(tile_data, h=<tile height>, w=<tile width>)`
+                returns the latent of a tile
+            latent_shape (torch.Size): shape of the merged latent
+            tile_manager_hd (TileManager, optional): see `get_core_of_overlapping_latent_tile`
+
+        Returns:
+            torch.Tensor: latent of the whole input
+        """
+        latent = torch.empty(latent_shape, device=data.device)
+        for image_tile, latent_tile in zip(self.image_tiles, self.latent_tiles):
+            latent_tile_data = analysis_func(tiling.get_data(data, image_tile),
+                                             h=image_tile.size.height, w=image_tile.size.width)
+            self.assign_core_of_latent_tile(latent, latent_tile_data, latent_tile, image_tile, tile_manager_hd)
+        return latent
+
+    def synthesis_by_tiles(self, latent: torch.Tensor, synthesis_func: Callable, image_shape: torch.Size) -> torch.Tensor:
+        """Apply a synthesis transform tile by tile and merge the cores of the image tiles.
+
+        Args:
+            latent (torch.Tensor): input of the synthesis transform (latent domain)
+            synthesis_func (Callable): `synthesis_func(latent_tile_data, h=<tile height>, w=<tile width>)`
+                returns the reconstructed image tile
+            image_shape (torch.Size): shape of the merged output
+
+        Returns:
+            torch.Tensor: output of the synthesis transform for the whole latent
+        """
+        image = torch.empty(image_shape, device=latent.device)
+        for tile_info in self.get_iter_over_tiles(latent, image):
+            tile_shape = tile_info.output_shape()
+            tile_info.assign_data(synthesis_func(tile_info.get_data(), h=tile_shape[0], w=tile_shape[1]))
+        return image
 
     def __len__(self):
         return self.latent_tiles.rows * self.latent_tiles.columns

@@ -35,14 +35,43 @@ import torch.nn as nn
 
 
 class QuantModule(nn.Module):
+    """Quantization (rounding) with the straight-through estimator of the gradient."""
+
+    @staticmethod
+    def round_ste(y: torch.Tensor) -> torch.Tensor:
+        """Round the tensor; the gradient is passed as is."""
+        y_no_grad = y.detach()
+        return y_no_grad.round() - y_no_grad + y
+
+    @staticmethod
+    def noise_ste(y: torch.Tensor) -> torch.Tensor:
+        """Add the rounding error of the tensor shifted by uniform noise (the model of the quantization
+        used to estimate likelihoods in training); the gradient is passed as is."""
+        y_no_grad_tilde = y.detach() + torch.empty_like(y).uniform_(-0.5, 0.5)
+        return y_no_grad_tilde.round() - y_no_grad_tilde + y
+
+    @staticmethod
+    def round_masked_ste(data: torch.Tensor, mask: torch.Tensor, int_dtype: torch.dtype) -> torch.Tensor:
+        """Quantize a (scaled) residual: zero the skipped elements, clip to the range of an integer
+        type and round; the gradient is passed as is.
+
+        Args:
+            data (torch.Tensor): residual, the skipped elements are zeroed in-place
+            mask (torch.Tensor): elements with False are skipped; None - nothing is skipped
+            int_dtype (torch.dtype): integer type the quantized residual has to fit to
+
+        Returns:
+            torch.Tensor: quantized residual
+        """
+        if mask is not None:
+            data[~mask.to(torch.bool)] = 0
+        type_info = torch.iinfo(int_dtype)
+        data = torch.clamp(data, type_info.min, type_info.max)
+        return data - (data - data.round()).detach()
+
     def forward(self, y):
         if self.training:
-            y_no_grad = y.detach()
-            y_hat = y_no_grad.round() - y_no_grad + y
-            y_no_grad_tilde = y_no_grad + torch.empty_like(y).uniform_(-0.5, 0.5)
-            y_tilde = y_no_grad_tilde.round() - y_no_grad_tilde + y
-            return y_hat, y_tilde
+            return self.round_ste(y), self.noise_ste(y)
         else:
-            y_no_grad = y.detach()
-            y_hat = y_no_grad.round() - y_no_grad + y
+            y_hat = self.round_ste(y)
             return y_hat, y_hat

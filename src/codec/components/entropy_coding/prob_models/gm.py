@@ -262,11 +262,22 @@ class GMProbModel(nn.Module):
         likelihood = upper - lower
         return likelihood
 
+    @staticmethod
+    def scale_log_step(scale_min: float, scale_max: float, scale_level: int) -> float:
+        """Step of the grid of the scales (sigmas) in the log domain: the grid has `scale_level` values
+        from `scale_min` to `scale_max`, uniform in the log domain."""
+        return (np.log(scale_max) - np.log(scale_min)) / (scale_level - 1)
+
+    @staticmethod
+    def index_to_scale(index: Tensor, scale_min: float, scale_max: float, scale_level: int) -> Tensor:
+        """Convert (fractional) indexes of the grid of the scales to the scales."""
+        log_k = GMProbModel.scale_log_step(scale_min, scale_max, scale_level)
+        log_b = np.log(scale_min)
+        return torch.exp(index * log_k + log_b)
+
     def _index_to_scale(self, scale):
         scale = torch.clamp(torch.bitwise_right_shift(scale + self.scale_table_precision_minus_1_exp, self.scale_table_precision), 0, self.scale_level - 1)
-        log_k = (np.log(self.scale_max) - np.log(self.scale_min)) / (self.scale_level - 1)
-        log_b = np.log(self.scale_min)
-        scale = torch.exp(scale * log_k + log_b) * (1 << self.scale_table_precision)
+        scale = self.index_to_scale(scale, self.scale_min, self.scale_max, self.scale_level) * (1 << self.scale_table_precision)
         return scale
 
     def forward(

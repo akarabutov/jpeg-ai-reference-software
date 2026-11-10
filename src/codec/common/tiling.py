@@ -32,7 +32,7 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 
 import math
-from typing import List, Generator
+from typing import List, Generator, Tuple
 
 import torch
 from attrs import define, field, validators
@@ -310,6 +310,24 @@ def get_alignment_size(num_downsampling_layers: int) -> int:
     """
     alignment_size = 2**(num_downsampling_layers + 1)
     return alignment_size
+
+
+def get_latent_shapes(img_height: int, img_width: int, alignment_size: int, chs: int) -> Tuple[Tuple[int], Tuple[int], Tuple[int]]:
+    """Shapes of the latent tensors of an image (or of one of its components), used to set up tiles.
+
+    Args:
+        img_height (int): height of the input of the analysis transform
+        img_width (int): width of the input of the analysis transform
+        alignment_size (int): downscale factor of the analysis transform (see `get_alignment_size`)
+        chs (int): number of channels of the latent space
+
+    Returns:
+        Tuple: shapes of y (latent), psi (output of the hyper decoder) and z (hyper latent)
+    """
+    def shape(chs_num: int, downscale_factor: int) -> Tuple[int]:
+        return (1, chs_num, math.ceil(img_height / downscale_factor), math.ceil(img_width / downscale_factor))
+
+    return shape(chs, alignment_size), shape(chs * 4, alignment_size * 2), shape(chs * 4, alignment_size * 4)
 
 
 def get_data(image_or_features: torch.Tensor, tile: Area) -> torch.Tensor:

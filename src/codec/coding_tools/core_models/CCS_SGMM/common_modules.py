@@ -34,7 +34,6 @@
 import math
 import os
 import torch
-import numpy as np
 from time import time
 from typing import Tuple
 from src.codec.common import (Decisions, determinism, disable_tf32, disable_torch_random, TensorOps, tiling)
@@ -46,7 +45,7 @@ from src.codec.components import (GMProbModel, LaplacianProbModel,
                                   HyperDecoderFactory, HyperEncoderFactory,
                                   HyperScaleDecoderFactory)
 from src.codec.components import QuantModule
-from src.codec.components.contexts.utils import Upsample_proc
+from src.codec.components.contexts.utils import ContextUtils
 from .params import CcsSharedModelsParams
 from src.codec.entropy_coding import ECModule
 from src.codec.common.tiling import Area
@@ -100,7 +99,7 @@ class CommonEncDecModules(ToolEngine):
             self.num_decode_chs = self.num_chs
         
     def build_model(self):
-        self.log_k = (np.log(self.sigma_quant_max) - np.log(self.sigma_quant_min)) / (self.sigma_quant_level-1)
+        self.log_k = GMProbModel.scale_log_step(self.sigma_quant_min, self.sigma_quant_max, self.sigma_quant_level)
         
         """Initialization of each part of the codec
         """
@@ -171,16 +170,9 @@ class CommonEncDecModules(ToolEngine):
         # Vrq and cwg quantize the residual
         data_q = self.quantizer.quantize_resi(data_s, quantizer_pararms)
 
-        # skip block and mask padding boundary
-        if mask2_list is not None:
-            mask2_list = mask2_list.to(torch.bool)
-            data_q[~mask2_list] = 0
+        # skip block and mask padding boundary, clip and round
+        resi_rq = QuantModule.round_masked_ste(data_q, mask2_list, torch.int16)
 
-        type_info = torch.iinfo(torch.int16)#int32
-        data_q = torch.clamp(data_q, type_info.min, type_info.max)
-
-        resi_rq = data_q - (data_q - data_q.round()).detach()
-        
         data_dq = self.quantizer.dequantize_resi(resi_rq, quantizer_pararms)
     
         return data_dq, resi_rq        
@@ -222,21 +214,15 @@ class CommonEncDecModules(ToolEngine):
                  decisions: Decisions = {},
                  tile_info: tiling.ColocatedTiles = None) -> Decisions:
 
-        # tile descriptions for assigning latents, do not include overlapping regions
-        y_core_tile_desc, y_core_tile_desc_rel_to_overlap = self.owner.tile_manager_enc.get_core_of_overlapping_latent_tile(
-            tile_info.y, tile_info.img, self.tile_manager_hd)
-        z_core_tile_desc, z_core_tile_desc_rel_to_overlap = self.owner.tile_manager_enc.get_core_of_overlapping_latent_tile_z(
-            tile_info.z, tile_info.img, self.tile_manager_hd)
-
         img_tile_data = tiling.get_data(img, tile_info.img)
         tile_height, tile_width = img_tile_data.shape[2:]
         tile_decision_y = Decisions()
         tile_decision_y['y'] = self.owner.encoder(img_tile_data, h=tile_height, w=tile_width, is_clip=self.clipping_mode)
         self._compress_z(tile_decision_y['y'], tile_decision_y, h=tile_height, w=tile_width)
-        y_core_tile_data = tiling.get_data(tile_decision_y['y'], y_core_tile_desc_rel_to_overlap)
-        tiling.assign_data(decisions['y'], y_core_tile_desc, y_core_tile_data)
-        z_core_tile_data = tiling.get_data(tile_decision_y['z_hat'], z_core_tile_desc_rel_to_overlap)
-        tiling.assign_data(decisions['z_hat'], z_core_tile_desc, z_core_tile_data)
+        # assign latents of the tile, do not include overlapping regions
+        tile_manager_enc = self.owner.tile_manager_enc
+        tile_manager_enc.assign_core_of_latent_tile(decisions['y'], tile_decision_y['y'], tile_info.y, tile_info.img, self.tile_manager_hd)
+        tile_manager_enc.assign_core_of_latent_tile_z(decisions['z_hat'], tile_decision_y['z_hat'], tile_info.z, tile_info.img, self.tile_manager_hd)
 
     @determinism
     def hyper_decode_tile(self,
@@ -442,7 +428,7 @@ class CommonEncDecModules(ToolEngine):
         height, width = y_hat.shape[-2:]
         psi = decisions.get('psi')
         if not self.use_context_module:
-            psi = Upsample_proc(torch.chunk(psi, chunks=4, dim=1))[:, :, 0:height, 0:width]
+            psi = ContextUtils.hyper_to_mean(psi, height, width)
         #scale_log = decisions['scale_log'] 
         skip_scale_log = decisions.get('skip_scale_log')
        
@@ -583,7 +569,7 @@ class CommonEncDecModules(ToolEngine):
         rv_full = decisions['residual']
         params = decisions['psi']
         if not self.use_context_module:
-            mean = Upsample_proc(torch.chunk(params,chunks=4,dim=1))[:,:,0:rv_full.shape[2],0:rv_full.shape[3]]
+            mean = ContextUtils.hyper_to_mean(params, rv_full.shape[2], rv_full.shape[3])
             y_hat = rv_full + mean
             decisions.update({'y_hat': y_hat})
         else:

@@ -179,15 +179,8 @@ class CcsGvaeSGMM(CoreModelBase):
         img_shape = (1,1,img_height, img_width)
         full_img_shape = (1,1,full_img_height, full_img_width)
         # out_img_shape = (1,1,img_height*coeff, img_width*coeff)
-        latent_y_height = math.ceil(img_height / model.alignment_size)
-        latent_y_width = math.ceil(img_width / model.alignment_size)
-        latent_y_shape = (1, model.chs_ls, latent_y_height, latent_y_width)
-        latent_psi_height = math.ceil(img_height / (model.alignment_size * 2 ))
-        latent_psi_width = math.ceil(img_width / (model.alignment_size * 2 ))
-        latent_psi_shape = (1, model.chs_ls*4, latent_psi_height, latent_psi_width)
-        latent_z_height = math.ceil(img_height / (model.alignment_size * 4 ))
-        latent_z_width = math.ceil(img_width / (model.alignment_size * 4 ))
-        latent_z_shape = (1, model.chs_ls*4, latent_z_height, latent_z_width)
+        latent_y_shape, latent_psi_shape, latent_z_shape = tiling.get_latent_shapes(
+            img_height, img_width, model.alignment_size, model.chs_ls)
 
 
         # this is weird. why in common modules?1

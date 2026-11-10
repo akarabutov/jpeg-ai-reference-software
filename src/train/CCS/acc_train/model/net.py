@@ -32,9 +32,7 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 import os
 import random
-import math
 
-import einops
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -52,7 +50,7 @@ except ImportError:
     raise ImportError('PyTorch 1.8.x is needed')
 from src.codec.common.colorspace import ColorSpace
 from src.codec.components.contexts.context import Context
-from src.codec.components.contexts.utils import Upsample_proc
+from src.codec.components.contexts.utils import ContextUtils
 from src.codec.components.entropy_coding.entropy_estimation import cal_y_likelihoods_decoupled
 from src.codec.components.entropy_coding.prob_models.factorized import \
     FactorizedProbModel
@@ -64,7 +62,8 @@ from src.codec.components import (
         DecoderFactory,
         HyperEncoderFactory,
         HyperDecoderFactory,
-        HyperScaleDecoderFactory
+        HyperScaleDecoderFactory,
+        QuantModule
     )
 from src.codec.coding_tools.tiling import TileManager
 from src.codec.common import tiling
@@ -134,8 +133,7 @@ class Net(nn.Module):
         self.sigma_min = args.sigma_quant_min
         self.sigma_max = args.sigma_quant_max
         self.sigma_level = args.sigma_quant_level
-        self.log_k = (np.log(self.sigma_max) - np.log(self.sigma_min)) / (self.sigma_level - 1)
-        self.log_b = np.log(self.sigma_min)
+        self.log_k = GMProbModel.scale_log_step(self.sigma_min, self.sigma_max, self.sigma_level)
 
         self.encoder_Y = MultiCoder(EncoderFactory(), 
                                     chs_ls=N,
@@ -259,16 +257,6 @@ class Net(nn.Module):
         
 
             
-    @staticmethod
-    def parse_multi_params(param_str, count_items) -> List[List[int]]:
-        ans = [[int(x) for x in y.split(',')] for y in param_str.split(';')] if param_str is not None else None
-        if ans is not None:
-            if len(ans) != count_items:
-                loop_cou = count_items - len(ans)
-                for _ in range(loop_cou):
-                    ans.append(ans[-1])
-        return ans
-
     def quantize(self, data:torch.Tensor,  gvae_params:dict= None, tool_params:dict = None) -> Tuple[torch.Tensor]:
         """Quantize and dequantize residual process, including residual processing by RVS and skip tools
 
@@ -288,21 +276,11 @@ class Net(nn.Module):
             n_rate = gvae_params["n_rate"]
             ft = gvae_params["ft"]
 
-        mask2_list = tool_params["mask2"]
-        
-        data_s = data
-        
         # Vrq quantize the residual
-        data_q = vrq_func(data_s, n_rate, ft) if gvae_params is not None else data_s
+        data_q = vrq_func(data, n_rate, ft) if gvae_params is not None else data
 
-        # skip block and mask padding boundary
-        mask2_list = mask2_list.to(torch.bool)
-        data_q[~mask2_list] = 0
-
-        type_info = torch.iinfo(torch.int32)
-        data_q = torch.clamp(data_q, type_info.min, type_info.max)
-
-        resi_rq = data_q - (data_q - data_q.round()).detach()
+        # skip block and mask padding boundary, clip and round (as the codec does)
+        resi_rq = QuantModule.round_masked_ste(data_q, tool_params["mask2"], torch.int32)
 
         # Vrq dequantize the residual
         data_dq =  vrq_func.dequantize(resi_rq, n_rate, ft) if gvae_params is not None else resi_rq
@@ -562,39 +540,14 @@ class Net(nn.Module):
             item = item.to(memory_format=target_format)
         self.mem_format = choice
 
-    def addZNoise(self, input):
-        out_hat = input.detach().round() - input.detach() + input
-        intermediate = input.detach() + torch.empty_like(input).uniform_(-0.5, 0.5)
-        out_for_lh_calculation = intermediate.round() - intermediate + input
-        return out_hat, out_for_lh_calculation
-
-    def addResiNoise(self, input):
-        intermediate = input.detach() + torch.empty_like(input).uniform_(-0.5, 0.5)
-        out = intermediate.round() - intermediate + input
-        return out
-
-    def _round_with_detach(self, input):
-        input_detached = input.detach()
-        detached_round = input_detached.round() - input_detached + input
-        return detached_round
-
     def _gen_skip_cubeflag(self, res_hat, mask_map, cube_flag_thre):
         res_hat_skip = res_hat.clone()
         res_hat_skip[mask_map] = 0
         diff_yhat = (res_hat_skip - res_hat).abs()
-        N,C,H,W = diff_yhat.shape
-        diff_yhat = diff_yhat.reshape(1,N,C,H,W)
+        C, H, W = diff_yhat.shape[1:]
         cube_size = 8
-        cube_chan = C
-        h_pad = ((H+cube_size-1)// cube_size) * cube_size - H
-        w_pad = ((W+cube_size-1)// cube_size) * cube_size - W
-        diff_yhat = F.pad(diff_yhat, (0, w_pad, 0, h_pad), value=0)
-        maxpool = torch.nn.MaxPool3d((cube_chan, cube_size, cube_size), (cube_chan, cube_size, cube_size), 0)
-        cubeflag = (maxpool(diff_yhat) > cube_flag_thre) # skip_mask = cubeflag ! skip_masp
-        cubeflag = ~cubeflag[0,:,:,:,:]
-        cubeflag = einops.repeat(cubeflag, 'a b c d -> a (b repeat1) (c repeat2) (d repeat3)', repeat1=cube_chan, repeat2=cube_size, repeat3=cube_size)
-        cubeflag = cubeflag[:, :C, :H, :W]
-        return cubeflag
+        cubeflag = ContextUtils.cube_flags_from_diff(diff_yhat, C, cube_size, cube_flag_thre)
+        return ContextUtils.repeat_cube_flags(cubeflag, C, cube_size)[:, :C, :H, :W]
 
     def _skip_latent(self, res_hat, scale, likelihoods, skip_thre=0.2, cube_flag_thre=1):
         mask_map = (scale <= skip_thre)
@@ -604,181 +557,103 @@ class Net(nn.Module):
         likelihoods[mask_map] = 1.0
         return res_hat, likelihoods
 
+    # ##################################################################################################################
+    #  tiling (validation of big pictures); the tiles are managed by the TileManager of the codec
+    # ##################################################################################################################
+    NUM_SAMPLES_PER_TILE_Y = 1024 * 1024
+    NUM_SAMPLES_PER_TILE_UV = 1179648
+    NUM_SAMPLES_TILE_OVERLAP = 48
 
-    def _rec_from_latent_code(self, y_hat_Y, y_hat_UV, h, w, args):
-        x_reco_Y = self.decoder_Y(y_hat_Y, h=h, w=w)
-        y_hat_Y_ds = y_hat_Y
-        y_hat_UV = torch.cat((y_hat_Y_ds, y_hat_UV), dim=1)
-        x_reco_UV = self.decoder_UV(y_hat_UV, h=h, w=w)
-        xY_reco = x_reco_Y
+    def _create_tile_manager(self, alignment_size, num_samples_per_tile, image_shape, latent_shapes) -> TileManager:
+        tile_manager = TileManager(alignment_size, latent_downscale_factor_y=alignment_size,
+                                   use_coding_headers=False, signal_tileSignalingType=False)
+        tile_manager.numSamplesPerTile = num_samples_per_tile
+        tile_manager.numSamplesTileOverlap = self.NUM_SAMPLES_TILE_OVERLAP
+        tile_manager.setup_tiles_enc(image_shape, *latent_shapes)
+        return tile_manager
+
+    def _setup_tile_managers(self, xInput_Y, xInput_UV, args):
+        """Tile managers of a picture: luma (analysis and synthesis), chroma analysis and chroma synthesis.
+
+        Returns also the shapes of the latents of all encoders (luma, chroma).
+        """
+        # luma
+        alignment_size = tiling.get_alignment_size(num_downsampling_layers=3)
+        latent_shapes_Y = tiling.get_latent_shapes(*xInput_Y.shape[2:], alignment_size, args.N)
+        tile_manager_Y = self._create_tile_manager(alignment_size, self.NUM_SAMPLES_PER_TILE_Y,
+                                                   xInput_Y.shape, latent_shapes_Y)
+        # chroma, analysis
+        alignment_size = tiling.get_alignment_size(num_downsampling_layers=2)
+        latent_shapes_UV = tiling.get_latent_shapes(*xInput_UV.shape[2:], alignment_size, args.N_UV)
+        tile_manager_UV = self._create_tile_manager(
+            alignment_size, self.NUM_SAMPLES_PER_TILE_UV / self.encoder_UV.module.count(), xInput_UV.shape, latent_shapes_UV)
+        # chroma, synthesis (its output is 4:4:4)
+        alignment_size_dec = tiling.get_alignment_size(num_downsampling_layers=3)
+        img_shape = (1, xInput_UV.shape[1], xInput_UV.shape[2] * 2, xInput_UV.shape[3] * 2)
+        tile_manager_UV_dec = self._create_tile_manager(
+            alignment_size_dec, self.NUM_SAMPLES_PER_TILE_UV / self.decoder_UV.module.count(), img_shape, latent_shapes_UV)
+
+        latent_shape_Y = (self.encoder_Y.module.count(), *latent_shapes_Y[0][1:])
+        latent_shape_UV = (self.encoder_UV.module.count(), *latent_shapes_UV[0][1:])
+        return tile_manager_Y, tile_manager_UV, tile_manager_UV_dec, latent_shape_Y, latent_shape_UV
+
+    @staticmethod
+    def _analysis(encoder, x, h, w, tile_manager=None, latent_shape=None):
+        """Analysis transform of the whole picture or tile by tile (if tiles are enabled in the tile manager)."""
+        if tile_manager is not None and tile_manager.is_enabled():
+            return tile_manager.analysis_by_tiles(x, partial(encoder, alfa=1), latent_shape)
+        return encoder(x, alfa=1, h=h, w=w)
+
+    @staticmethod
+    def _synthesis(decoder, y_hat, h, w, tile_manager=None, image_shape=None):
+        """Synthesis transform of the whole picture or tile by tile (if tiles are enabled in the tile manager)."""
+        if tile_manager is not None and tile_manager.is_enabled():
+            return tile_manager.synthesis_by_tiles(y_hat, decoder, image_shape)
+        return decoder(y_hat, h=h, w=w)
+
+    def _rec_from_latent_code(self, y_hat_Y, y_hat_UV, h, w, net_input=None, tile_manager_Y=None, tile_manager_UV=None):
+        """Reconstruct the picture; the tile managers (and `net_input`) are given for a tiled reconstruction."""
+        # Keep the order of the operations (luma synthesis, concatenation, chroma synthesis): it defines the
+        # order the gradients of `y_hat_Y` are accumulated in, i.e. the exact values of the gradients.
+        image_shape = None
+        if tile_manager_Y is not None:
+            image_shape = [y_hat_Y.shape[0] * self.decoder_Y.module.count()] + list(net_input['xInput_Y'].shape[1:])
+        xY_reco = self._synthesis(self.decoder_Y, y_hat_Y, h, w, tile_manager_Y, image_shape)
+
+        y_hat_UV = torch.cat((y_hat_Y, y_hat_UV), dim=1)
+        if tile_manager_UV is not None:
+            xInput_UV = net_input['xInput_UV']
+            image_shape = [y_hat_UV.shape[0] * self.decoder_UV.module.count(), 2,
+                           2 * xInput_UV.shape[2], 2 * xInput_UV.shape[3]]
+        x_reco_UV = self._synthesis(self.decoder_UV, y_hat_UV, h, w, tile_manager_UV, image_shape)
         xU_reco, xV_reco = x_reco_UV.chunk(2, dim=1)
         return xY_reco, xU_reco, xV_reco
 
-    def _tiled_rec_from_latent_code(self, net_input, y_hat_Y, y_hat_UV, h_i, w_i, tile_manager_Y, tile_manager_UV, args):
-        if tile_manager_Y.is_enabled():
-            x_reco_Y = torch.empty([y_hat_Y.shape[0] * self.decoder_Y.module.count()] + list(net_input['xInput_Y'].shape[1:]), device=y_hat_Y.device)
-            for tile_info in tile_manager_Y.get_iter_over_tiles(y_hat_Y, x_reco_Y):
-                latent_tile_data = tile_info.get_data()
-                s = tile_info.output_shape()
-                image_tile_data = self.decoder_Y(latent_tile_data, h=s[0], w=s[1])
-                tile_info.assign_data(image_tile_data)
-        else:
-            x_reco_Y = self.decoder_Y(y_hat_Y, h=h_i, w=w_i)
+    # ##################################################################################################################
+    #  parts of the forward pass shared by the training and the validation
+    # ##################################################################################################################
+    def _hyper_path(self, y_Y, y_UV, size_Y, size_UV, n_rate, ft, amp, add_noise):
+        """Hyper analysis, quantization of z and hyper synthesis.
 
-        y_hat_Y_ds = y_hat_Y
-        y_hat_UV = torch.cat((y_hat_Y_ds, y_hat_UV), dim=1)
-        if tile_manager_UV.is_enabled():
-            x_reco_UV = torch.empty([y_hat_UV.shape[0] * self.decoder_UV.module.count(), 2, 2 * net_input['xInput_UV'].shape[2], 2 * net_input['xInput_UV'].shape[3]], device=y_hat_UV.device)
+        Args:
+            size_Y, size_UV: (height, width) of the inputs of the analysis transforms
+            add_noise (bool): training mode - the likelihoods of z are estimated with the uniform noise
+                and the gradient is passed through the rounding; otherwise z is just rounded
 
-            for tile_info in tile_manager_UV.get_iter_over_tiles(y_hat_UV, x_reco_UV):
-                latent_tile_data = tile_info.get_data()
-                s = tile_info.output_shape()
-                image_tile_data = self.decoder_UV(latent_tile_data, h=s[0], w=s[1])
-                tile_info.assign_data(image_tile_data)
-        else:
-            x_reco_UV = self.decoder_UV(y_hat_UV, h=h_i, w=w_i)
-
-        xY_reco = x_reco_Y
-        xU_reco, xV_reco = x_reco_UV.chunk(2, dim=1)
-        return xY_reco, xU_reco, xV_reco
-
-
-    def _decode_to_loss(
-            self,
-            y_Y,
-            y_UV,
-            psi_Y,
-            psi_UV,
-            scale_hat_Y,
-            scale_hat_UV,
-            delta_Y,
-            delta_UV,
-            beta,
-            net_input,
-            criterion,
-            z_likelihoods_Y,
-            z_likelihoods_UV,
-            args,
-            amp=False,
-            is_train=False
-    ):
-
-        n_rate, ft = self._nrate_n_ft(beta)
-        with autocast(enabled=amp):
-            mean_Y = psi_Y
-            mean_UV = psi_UV
-            res_Y = self.vr_vec_Y(y_Y - mean_Y, n_rate, ft)
-            res_UV = self.vr_vec_UV(y_UV - mean_UV, n_rate, ft)
-            if is_train:
-                res_Y_for_lh_calculation = self.addResiNoise(res_Y)  # res_tilde_Y
-                res_UV_for_lh_calculation = self.addResiNoise(res_UV)
-            else:
-                res_Y_for_lh_calculation = self._round_with_detach(res_Y)
-                res_UV_for_lh_calculation = self._round_with_detach(res_UV)
-
-        y_likelihoods_Y = cal_y_likelihoods_decoupled(
-            None, None, None, self.entropy,
-            scale_hat_Y.to(dtype=torch.float32),
-            res=res_Y_for_lh_calculation.to(dtype=torch.float32)
-        )
-        y_likelihoods_UV = cal_y_likelihoods_decoupled(
-            None, None, None, self.entropy,
-            scale_hat_UV.to(dtype=torch.float32),
-            res=res_UV_for_lh_calculation.to(dtype=torch.float32)
-        )
-        h, w = net_input['input_shape']['H'], net_input['input_shape']['W']
-        with autocast(enabled=amp):
-            # if is_train:
-            res_Y = self._round_with_detach(res_Y)
-            res_UV = self._round_with_detach(res_UV)
-
-            # element wise skip in train
-            if args.skip_thre > 1e-12:
-                res_Y, y_likelihoods_Y = self._skip_latent(res_Y, scale_hat_Y, y_likelihoods_Y, skip_thre=args.skip_thre, cube_flag_thre=args.cube_flag_thre)
-                res_UV, y_likelihoods_UV = self._skip_latent(res_UV, scale_hat_UV, y_likelihoods_UV, skip_thre=args.skip_thre, cube_flag_thre=args.cube_flag_thre)
-
-            if args.enable_gvae:
-                y_hat_Y = self.vr_vec_Y.module.dequantize(res_Y, n_rate, ft) + mean_Y
-                y_hat_UV = self.vr_vec_UV.module.dequantize(res_UV, n_rate, ft) + mean_UV
-            else:
-                y_hat_Y = self.vr_vec_Y.module.dequantize(res_Y + mean_Y, n_rate, ft)
-                y_hat_UV = self.vr_vec_UV.module.dequantize(res_UV + mean_UV, n_rate, ft)
-            x_reco_Y = self.decoder_Y(y_hat_Y, h=h, w=w)
-            y_hat_Y_ds = y_hat_Y
-            y_hat_UV = torch.cat((y_hat_Y_ds, y_hat_UV), dim=1)
-            x_reco_UV = self.decoder_UV(y_hat_UV, h=h, w=w)
-            xY_reco = x_reco_Y
-            xU_reco, xV_reco = x_reco_UV.chunk(2, dim=1)
-
-        rd_loss = self._rd_loss(criterion,
-                                y_likelihoods_Y,
-                                y_likelihoods_UV,
-                                z_likelihoods_Y,
-                                z_likelihoods_UV,
-                                xY_reco,
-                                xU_reco,
-                                xV_reco,
-                                net_input,
-                                beta,
-                                args,
-                                is_train=is_train)
-        if is_train:
-            reg_loss = self._regulation_loss(criterion, args, amp=amp)
-            return {'rd_loss': rd_loss, 'reg_loss': reg_loss}
-        else:
-            return rd_loss
-    
-    def _index_to_scale(self, index):
-        scale = torch.exp(index * self.log_k + self.log_b)
-        return scale
-
-    def get_total_loss(self, loss_dict):
-        total_loss_dict = dict()
-        total_weight = 0
-        for key_enc, sub_loss_dict in loss_dict.items():
-            assert key_enc in ['bop', 'hop']
-            #if dist.get_rank() == 0:
-            #    print('-->enc-key', key_enc, self.loss_weights_enc[key_enc])
-            total_weight += self.loss_weights_enc[key_enc]
-            for key, val in sub_loss_dict.items():
-                if key in total_loss_dict:
-                    total_loss_dict[key] = total_loss_dict[key] + val * self.loss_weights_enc[key_enc]
-                else:
-                    total_loss_dict[key] = val * self.loss_weights_enc[key_enc]
-        for key in total_loss_dict.keys():
-            total_loss_dict[key] = total_loss_dict[key] / total_weight
-        return total_loss_dict
-
-    def train_forward_to_loss(self, x, criterion, beta, args, amp=True):
-        net_input = self._preprocess(x, args)
-        n_rate, ft = self._nrate_n_ft(beta)
-        xInput_Y, xInput_UV = net_input['xInput_Y'], net_input['xInput_UV']
-        h, w = net_input['input_shape']['H'], net_input['input_shape']['W']
-        h2, w2 = (h+1)>>1, (w+1)>>1
-        with torch.set_grad_enabled('analysis' not in args.frozen_part):
-            with autocast(enabled=amp):
-                y_Y = self.encoder_Y(xInput_Y, alfa=1, h=h, w=w)
-                y_UV = self.encoder_UV(xInput_UV, alfa=1, h=h2, w=w2)
-        return self._train_forward_to_loss(net_input, n_rate, ft, y_Y, y_UV, criterion, beta, args, amp)
-
-    def _train_forward_to_loss(self, net_input, n_rate, ft, y_Y, y_UV, criterion, beta, args, amp=True):
-        #net_input = self._preprocess(x, args)
-        #n_rate, ft = self._nrate_n_ft(beta)
-        #xInput_Y, xInput_UV = net_input['xInput_Y'], net_input['xInput_UV']
-        h, w = net_input['input_shape']['H'], net_input['input_shape']['W']
-        h2, w2 = (h+1)>>1, (w+1)>>1
-        #with torch.set_grad_enabled(not args.train_entropy_n_synth_parts):
-        #    with autocast(enabled=amp):
-        #        y_Y = self.encoder_Y(xInput_Y, alfa=1, h=h, w=w)
-        #        y_UV = self.encoder_UV(xInput_UV, alfa=1, h=h2, w=w2)
-
-        # quantizer and distribution about `z`
+        Returns:
+            likelihoods of z (Y, UV), outputs of the hyper decoders (Y, UV) and scales of the residuals (Y, UV)
+        """
+        (h, w), (h2, w2) = size_Y, size_UV
         with autocast(enabled=amp):
             z_Y = self.hyper_encoder_Y(y_Y, h=h, w=w)
             z_UV = self.hyper_encoder_UV(y_UV, h=h2, w=w2)
 
-        z_hat_Y, z_Y_for_lh_calculation = self.addZNoise(z_Y)
-        z_hat_UV, z_UV_for_lh_calculation = self.addZNoise(z_UV)
+        if add_noise:
+            z_hat_Y, z_Y_for_lh_calculation = QuantModule.round_ste(z_Y), QuantModule.noise_ste(z_Y)
+            z_hat_UV, z_UV_for_lh_calculation = QuantModule.round_ste(z_UV), QuantModule.noise_ste(z_UV)
+        else:
+            z_hat_Y = z_Y_for_lh_calculation = z_Y.round()
+            z_hat_UV = z_UV_for_lh_calculation = z_UV.round()
 
         # distribution about z
         z_likelihoods_Y = self.hyper_entropy_Y(z_Y_for_lh_calculation.to(dtype=torch.float32))
@@ -795,49 +670,64 @@ class Net(nn.Module):
 
             scale_hat_Y = self.vr_vec_Y(scale_hat_Y, n_rate, ft)
             scale_hat_UV = self.vr_vec_UV(scale_hat_UV, n_rate, ft)
+        return z_likelihoods_Y, z_likelihoods_UV, psi_Y, psi_UV, scale_hat_Y, scale_hat_UV
 
-        # only Y comp do context
+    def _context_path(self, y_Y, y_UV, psi_Y, psi_UV, n_rate, ft, amp):
+        """Prediction of the latents: the context model for luma, the output of the hyper decoder for chroma.
+
+        Returns:
+            reconstructed luma latent (in the domain of the gain unit), means of the luma and chroma latents
+        """
         with autocast(enabled=amp):
             gvae_params_y = {"gvae": self.vr_vec_Y.module, "n_rate": n_rate, "ft": ft}
             self.context_Y.module.quantize_func = partial(self.quantize, gvae_params=gvae_params_y)
-            y_hat_Y_precise, mean_Y, _, _, _ = self.context_Y(y=y_Y, hyper_params=psi_Y)
+            y_hat_Y, mean_Y, _, _, _ = self.context_Y(y=y_Y, hyper_params=psi_Y)
+        mean_UV = ContextUtils.hyper_to_mean(psi_UV, y_UV.shape[2], y_UV.shape[3])
+        return y_hat_Y, mean_Y, mean_UV
+
+    def _y_likelihoods(self, scale_hat, res):
+        return cal_y_likelihoods_decoupled(None, None, None, self.entropy, scale_hat.to(dtype=torch.float32), res=res)
+
+    def _index_to_scale(self, index):
+        return GMProbModel.index_to_scale(index, self.sigma_min, self.sigma_max, self.sigma_level)
+
+    def train_forward_to_loss(self, x, criterion, beta, args, amp=True):
+        net_input = self._preprocess(x, args)
+        n_rate, ft = self._nrate_n_ft(beta)
+        xInput_Y, xInput_UV = net_input['xInput_Y'], net_input['xInput_UV']
+        h, w = net_input['input_shape']['H'], net_input['input_shape']['W']
+        h2, w2 = (h+1)>>1, (w+1)>>1
+        with torch.set_grad_enabled('analysis' not in args.frozen_part):
+            with autocast(enabled=amp):
+                y_Y = self._analysis(self.encoder_Y, xInput_Y, h, w)
+                y_UV = self._analysis(self.encoder_UV, xInput_UV, h2, w2)
+
+        # quantizer and distributions about `z` and `y`
+        z_likelihoods_Y, z_likelihoods_UV, psi_Y, psi_UV, scale_hat_Y, scale_hat_UV = self._hyper_path(
+            y_Y, y_UV, (h, w), (h2, w2), n_rate, ft, amp, add_noise=True)
+
+        # only Y comp do context
+        y_hat_Y_precise, mean_Y, mean_UV = self._context_path(y_Y, y_UV, psi_Y, psi_UV, n_rate, ft, amp)
         y_hat_Y = y_Y - (y_Y - y_hat_Y_precise).detach()
 
-        mean_UV = Upsample_proc(torch.chunk(psi_UV, chunks=4, dim=1))
-        mean_UV = mean_UV[:, :, 0:y_UV.shape[2], 0:y_UV.shape[3]]
+        res_Y = self.vr_vec_Y(y_Y - mean_Y, n_rate, ft)
+        res_UV = self.vr_vec_UV(y_UV - mean_UV, n_rate, ft)
 
-        res_Y = y_Y - mean_Y
-        res_Y = self.vr_vec_Y(res_Y, n_rate, ft)
+        res_Y_for_lh_calculation = QuantModule.noise_ste(res_Y)
+        res_UV_for_lh_calculation = QuantModule.noise_ste(res_UV)
 
-        res_UV = y_UV - mean_UV
-        res_UV = self.vr_vec_UV(res_UV, n_rate, ft)
-
-        res_Y_for_lh_calculation = self.addResiNoise(res_Y)
-        res_UV_for_lh_calculation = self.addResiNoise(res_UV)
-
-        res_UV = self._round_with_detach(res_UV)
+        res_UV = QuantModule.round_ste(res_UV)
 
         if 'entropy' not in args.frozen_part:
-            res_Y_for_lh_calculation = self._round_with_detach(res_Y)
+            res_Y_for_lh_calculation = QuantModule.round_ste(res_Y)
             y_hat_Y = y_hat_Y_precise
 
         # TODO: convert res_Y_for_lh_calculation to torch.float32
-        y_likelihoods_Y = cal_y_likelihoods_decoupled(None,
-                                                      None,
-                                                      None,
-                                                      self.entropy,
-                                                      scale_hat_Y.to(dtype=torch.float32),
-                                                      res=res_Y_for_lh_calculation)
-        y_likelihoods_UV = cal_y_likelihoods_decoupled(None,
-                                                       None,
-                                                       None,
-                                                       self.entropy,
-                                                       scale_hat_UV.to(dtype=torch.float32),
-                                                       res=res_UV_for_lh_calculation)
+        y_likelihoods_Y = self._y_likelihoods(scale_hat_Y, res_Y_for_lh_calculation)
+        y_likelihoods_UV = self._y_likelihoods(scale_hat_UV, res_UV_for_lh_calculation)
 
-        xY_reco, xU_reco, xV_reco = None, None, None
         if args.enable_gvae:
-            res_Y = (res_Y.round() - res_Y).detach() + res_Y
+            res_Y = QuantModule.round_ste(res_Y)
         with autocast(enabled=amp):
             if args.skip_thre > 1e-12:
                 res_UV, y_likelihoods_UV = self._skip_latent(
@@ -847,15 +737,14 @@ class Net(nn.Module):
                         skip_thre=args.skip_thre,
                         cube_flag_thre=args.cube_flag_thre
                     )
-            if True:
-                if args.enable_gvae:
-                    y_hat_Y = self.vr_vec_Y.module.dequantize(res_Y, n_rate, ft) + mean_Y
-                    y_hat_UV = self.vr_vec_UV.module.dequantize(res_UV, n_rate, ft) + mean_UV
-                else:
-                    y_hat_Y = self.vr_vec_Y.module.dequantize(y_hat_Y, n_rate, ft)
-                    y_hat_UV = self.vr_vec_UV.module.dequantize(res_UV + mean_UV, n_rate, ft)
+            if args.enable_gvae:
+                y_hat_Y = self.vr_vec_Y.module.dequantize(res_Y, n_rate, ft) + mean_Y
+                y_hat_UV = self.vr_vec_UV.module.dequantize(res_UV, n_rate, ft) + mean_UV
+            else:
+                y_hat_Y = self.vr_vec_Y.module.dequantize(y_hat_Y, n_rate, ft)
+                y_hat_UV = self.vr_vec_UV.module.dequantize(res_UV + mean_UV, n_rate, ft)
 
-                xY_reco, xU_reco, xV_reco = self._rec_from_latent_code(y_hat_Y, y_hat_UV, h, w, args)
+            xY_reco, xU_reco, xV_reco = self._rec_from_latent_code(y_hat_Y, y_hat_UV, h, w)
 
             reg_loss = self._regulation_loss(criterion, args, amp=amp)
             rd_loss = self._rd_loss(criterion,
@@ -869,13 +758,9 @@ class Net(nn.Module):
                                     net_input,
                                     beta,
                                     args)
-            rec_data = dict()
-            rec_data['xY'] = xY_reco
-            rec_data['xCb'] = xU_reco 
-            rec_data['xCr'] = xV_reco
         ans = {'rd_loss': rd_loss, 'reg_loss': reg_loss}
-        if args.overfit: 
-            ans['rec_data'] = rec_data
+        if args.overfit:
+            ans['rec_data'] = {'xY': xY_reco, 'xCb': xU_reco, 'xCr': xV_reco}
         return ans
 
     def _preprocess(self, x, args, is_train=True):
@@ -1095,205 +980,39 @@ class Net(nn.Module):
         net_input = self._preprocess(x, args, is_train=False)
         if 'skip' in net_input:
             return None
-        return self._val_forward_to_loss(net_input, n_rate, ft, criterion, beta, args, amp)
-
-    def _masked_entropy(self, residual_Y_hat, scale_hat_Y, y_likelihoods_Y, residual_UV_hat, scale_hat_UV, y_likelihoods_UV):
-        _, masked_y_likelihoods_Y = self._skip_latent(residual_Y_hat, scale_hat_Y, y_likelihoods_Y, skip_thre=0.2, cube_flag_thre=1.0)
-        _, masked_y_likelihoods_UV = self._skip_latent(residual_UV_hat, scale_hat_UV, y_likelihoods_UV, skip_thre=0.2, cube_flag_thre=1.0)
-
-        latent_H_Y, latent_W_Y = masked_y_likelihoods_Y.shape[2], masked_y_likelihoods_Y.shape[3]
-        entropy_Y = torch.sum(-masked_y_likelihoods_Y.log2(), dim=(0, 2, 3)) / (latent_H_Y * latent_W_Y)
-
-        latent_H_UV, latent_W_UV = masked_y_likelihoods_UV.shape[2], masked_y_likelihoods_UV.shape[3]
-        entropy_UV = torch.sum(-masked_y_likelihoods_UV.log2(), dim=(0, 2, 3)) / (latent_H_UV * latent_W_UV)
-
-        self.channel_wise_entropy_Y += entropy_Y.squeeze()
-        self.channel_wise_entropy_UV += entropy_UV.squeeze()
-
-    def _val_forward_to_loss(self, net_input, n_rate, ft, criterion, beta, args, amp=False):
 
         with torch.set_grad_enabled(False):
-            # for tiling of Y
-            num_downsampling_layers = 3
-            alignment_size = tiling.get_alignment_size(num_downsampling_layers)
-            tile_manager_Y = TileManager(alignment_size, latent_downscale_factor_y=alignment_size, use_coding_headers=False, signal_tileSignalingType=False)
-            tile_manager_Y.numSamplesPerTile = 1024*1024 #/ self.encoder_Y.module.count()
-            # tile_manager_Y.numSamplesPerTile = 1000000 # -> 4Ggb
-            tile_manager_Y.numSamplesTileOverlap = 48
-            img_height_Y, img_width_Y = net_input['xInput_Y'].shape[2:]
-            latent_height_Y = math.ceil(img_height_Y / alignment_size)
-            latent_width_Y = math.ceil(img_width_Y / alignment_size)
-            latent_shape_Y = (self.encoder_Y.module.count(), args.N, latent_height_Y, latent_width_Y) # channels not used for tiling
-            
-            latent_y_height = math.ceil(img_height_Y / alignment_size)
-            latent_y_width = math.ceil(img_width_Y / alignment_size)
-            latent_y_shape = (1, args.N, latent_y_height, latent_y_width)
-            latent_psi_height = math.ceil(img_height_Y / (alignment_size * 2 ))
-            latent_psi_width = math.ceil(img_width_Y / (alignment_size * 2 ))
-            latent_psi_shape = (1, args.N*4, latent_psi_height, latent_psi_width)
-            latent_z_height = math.ceil(img_height_Y / (alignment_size * 4 ))
-            latent_z_width = math.ceil(img_width_Y / (alignment_size * 4 ))
-            latent_z_shape = (1, args.N*4, latent_z_height, latent_z_width)
-            tile_manager_Y.setup_tiles_enc(net_input['xInput_Y'].shape, latent_y_shape, latent_psi_shape, latent_z_shape)
+            xInput_Y, xInput_UV = net_input['xInput_Y'], net_input['xInput_UV']
+            h_i, w_i = xInput_Y.shape[2:]
+            h_uv, w_uv = ((h_i+1)>>1, (w_i+1)>>1) if args.color == '420' else (h_i, w_i)
 
+            # big pictures are processed by tiles
+            tile_manager_Y, tile_manager_UV, tile_manager_UV_dec, latent_shape_Y, latent_shape_UV = \
+                self._setup_tile_managers(xInput_Y, xInput_UV, args)
 
-            # for tiling of UV
-            num_downsampling_layers = 2
-            num_upsampling_layers = 3
-            alignment_size = tiling.get_alignment_size(num_downsampling_layers)
-            alignment_size_dec = tiling.get_alignment_size(num_upsampling_layers)
-            tile_manager_UV = TileManager(alignment_size, latent_downscale_factor_y=alignment_size, use_coding_headers=False, signal_tileSignalingType=False)
-            tile_manager_UV.numSamplesPerTile = 1179648 / self.encoder_UV.module.count()
-            # tile_manager_UV.numSamplesPerTile = 250000 # -> 4Ggb
-            tile_manager_UV.numSamplesTileOverlap = 48
-            img_height_UV, img_width_UV = net_input['xInput_UV'].shape[2:]
-            latent_height_UV = math.ceil(img_height_UV / alignment_size)
-            latent_width_UV = math.ceil(img_width_UV / alignment_size)
-            latent_shape_UV = (self.encoder_UV.module.count(), args.N_UV, latent_height_UV, latent_width_UV) # channels not used for tiling
+            y_Y = self._analysis(self.encoder_Y, xInput_Y, h_i, w_i, tile_manager_Y, latent_shape_Y)
+            y_UV = self._analysis(self.encoder_UV, xInput_UV, h_uv, w_uv, tile_manager_UV, latent_shape_UV)
 
-            latent_y_height = math.ceil(img_height_UV / alignment_size)
-            latent_y_width = math.ceil(img_width_UV / alignment_size)
-            latent_y_shape = (1, args.N_UV, latent_y_height, latent_y_width)
-            latent_psi_height = math.ceil(img_height_UV / (alignment_size * 2 ))
-            latent_psi_width = math.ceil(img_width_UV / (alignment_size * 2 ))
-            latent_psi_shape = (1, args.N_UV*4, latent_psi_height, latent_psi_width)
-            latent_z_height = math.ceil(img_height_UV / (alignment_size * 4 ))
-            latent_z_width = math.ceil(img_width_UV / (alignment_size * 4 ))
-            latent_z_shape = (1, args.N_UV*4, latent_z_height, latent_z_width)
-            tile_manager_UV.setup_tiles_enc(net_input['xInput_UV'].shape, latent_y_shape, latent_psi_shape, latent_z_shape)
+            # hyper encoder/decoder Y, UV
+            z_likelihoods_Y, z_likelihoods_UV, psi_Y, psi_UV, scale_hat_Y, scale_hat_UV = self._hyper_path(
+                y_Y, y_UV, (h_i, w_i), (h_uv, w_uv), n_rate, ft, amp=False, add_noise=False)
 
-
-            # for tiling of UV decoder 444
-            tile_manager_UV_dec = TileManager(alignment_size_dec, latent_downscale_factor_y=alignment_size_dec, use_coding_headers=False, signal_tileSignalingType=False)
-            tile_manager_UV_dec.numSamplesPerTile = 1179648 / self.decoder_UV.module.count()
-            # tile_manager_UV.numSamplesPerTile = 250000 # -> 4Ggb
-            tile_manager_UV_dec.numSamplesTileOverlap = 48
-            img_height_UV, img_width_UV = net_input['xInput_UV'].shape[2:]
-            img_height_UV, img_width_UV = img_height_UV*2, img_width_UV*2
-            img_shape = (1, net_input['xInput_UV'].shape[1], img_height_UV, img_width_UV)
-            tile_manager_UV_dec.setup_tiles_enc(img_shape, latent_y_shape, latent_psi_shape, latent_z_shape)
-
-            #################### encoder Y ###########################
-            xInput_Y = net_input['xInput_Y']
-            n_i, c_i, h_i, w_i = xInput_Y.shape
-            h_i2, w_i2 = (h_i+1)>>1, (w_i+1)>>1
-            if tile_manager_Y.is_enabled():
-                y_Y = torch.empty(latent_shape_Y, device=xInput_Y.device)
-
-                for image_tile, latent_tile in zip(tile_manager_Y.image_tiles,
-                                                   tile_manager_Y.latent_tiles):
-                    image_tile_data = tiling.get_data(xInput_Y, image_tile)
-                    y_tile = self.encoder_Y(image_tile_data, alfa=1, h=image_tile.size.height, w=image_tile.size.width)
-
-                    # assign tile feature, but leave out features at boundaries by not using
-                    # part of overlapped regions
-                    assigned_tile, assigned_tile_rel_to_overlap = tile_manager_Y.get_core_of_overlapping_latent_tile(
-                        latent_tile, image_tile, None)
-                    assigned_data = tiling.get_data(y_tile, assigned_tile_rel_to_overlap)
-                    tiling.assign_data(y_Y, assigned_tile, assigned_data)
-
-            else:
-                y_Y = self.encoder_Y(xInput_Y, alfa=1, h=h_i, w=w_i)
-
-            #################### encoder UV ###########################
-            xInput_UV = net_input['xInput_UV']
-            if tile_manager_UV.is_enabled():
-                y_UV = torch.empty(latent_shape_UV, device=xInput_UV.device)
-
-                for image_tile, latent_tile in zip(tile_manager_UV.image_tiles,
-                                                   tile_manager_UV.latent_tiles):
-                    image_tile_data = tiling.get_data(xInput_UV, image_tile)
-                    y_tile = self.encoder_UV(image_tile_data, alfa=1, h=image_tile.size.height, w=image_tile.size.width)
-
-                    # assign tile feature, but leave out features at boundaries by not using
-                    # part of overlapped regions
-                    assigned_tile, assigned_tile_rel_to_overlap = tile_manager_UV.get_core_of_overlapping_latent_tile(
-                        latent_tile, image_tile, None)
-                    assigned_data = tiling.get_data(y_tile, assigned_tile_rel_to_overlap)
-                    tiling.assign_data(y_UV, assigned_tile, assigned_data)
-
-            else:
-                if args.color == '420':
-                    y_UV = self.encoder_UV(xInput_UV,
-                                           alfa=1,
-                                           h=h_i2,
-                                           w=w_i2)
-                else:
-                    y_UV = self.encoder_UV(xInput_UV, alfa=1, h=h_i, w=w_i)
-
-            #y_UV = self.func_encoder_UV(y_UV, n_rate, ft)
- 
-            #################### hyper encoder/decoder Y, UV ###########################
-            z_Y = self.hyper_encoder_Y(y_Y, h=h_i, w=w_i)
-            if args.color == '420':
-                z_UV = self.hyper_encoder_UV(y_UV, h=h_i2, w=w_i2)
-            else:
-                z_UV = self.hyper_encoder_UV(y_UV, h=h_i, w=w_i)
-
-            z_hat_Y = z_Y.round()
-            z_hat_UV = z_UV.round()
-
-            # distribution about z
-            z_likelihoods_Y = self.hyper_entropy_Y(z_hat_Y.to(dtype=torch.float32))
-            z_likelihoods_UV = self.hyper_entropy_UV(z_hat_UV.to(dtype=torch.float32))
-            # distribution about `y`
-            psi_Y = self.hyper_decoder_Y(z_hat_Y, h=h_i, w=w_i)
-            scale_hat_Y = self.hyper_scale_decoder_Y(z_hat_Y, h=h_i, w=w_i)
-            if args.color == '420':
-                psi_UV = self.hyper_decoder_UV(z_hat_UV,
-                                               h=h_i2,
-                                               w=w_i2)
-                scale_hat_UV = self.hyper_scale_decoder_UV(z_hat_UV,
-                                                           h=h_i2,
-                                                           w=w_i2)
-            else:
-                psi_UV = self.hyper_decoder_UV(z_hat_UV, h=h_i, w=w_i)
-                scale_hat_UV = self.hyper_scale_decoder_UV(z_hat_UV, h=h_i, w=w_i)
-   
-            scale_hat_Y = self._index_to_scale(scale_hat_Y)
-            scale_hat_UV = self._index_to_scale(scale_hat_UV)
-
-            scale_hat_Y = self.vr_vec_Y(scale_hat_Y, n_rate, ft)
-            scale_hat_UV = self.vr_vec_UV(scale_hat_UV, n_rate, ft)
-
-            gvae_params_y = {"gvae": self.vr_vec_Y.module, "n_rate": n_rate, "ft": ft}
-            self.context_Y.module.quantize_func = partial(self.quantize, gvae_params=gvae_params_y)
-            y_hat_Y, mean_Y, _, _, _ = self.context_Y(y=y_Y, hyper_params=psi_Y)
-
-            # gvae_params_uv = {"gvae": self.vr_vec_UV.module, "n_rate": n_rate, "ft": ft}
-            # self.context_UV.module.quantize_func = partial(self.quantize, gvae_params=gvae_params_uv)
-            # y_hat_UV, mean_UV, _, _ = self.context_UV(y=y_UV, hyper_params=psi_UV)
-            mean_UV = Upsample_proc(torch.chunk(psi_UV,chunks=4,dim=1))
-            mean_UV = mean_UV[:,:,0:y_UV.shape[2], 0:y_UV.shape[3]]
+            y_hat_Y, mean_Y, mean_UV = self._context_path(y_Y, y_UV, psi_Y, psi_UV, n_rate, ft, amp=False)
 
             residual_Y_hat  = self.vr_vec_Y(y_Y - mean_Y , n_rate, ft).round()
             residual_UV_hat = self.vr_vec_UV(y_UV - mean_UV, n_rate, ft).round()
 
             y_hat_UV = mean_UV + residual_UV_hat
 
-
-            y_likelihoods_Y = cal_y_likelihoods_decoupled(None,
-                                                          None,
-                                                          None,
-                                                          self.entropy,
-                                                          scale_hat_Y,
-                                                          y=None,
-                                                          res=residual_Y_hat)
-            y_likelihoods_UV = cal_y_likelihoods_decoupled(None,
-                                                           None,
-                                                           None,
-                                                           self.entropy,
-                                                           scale_hat_UV,
-                                                           y=None,
-                                                           res=residual_UV_hat)
+            y_likelihoods_Y = self._y_likelihoods(scale_hat_Y, residual_Y_hat)
+            y_likelihoods_UV = self._y_likelihoods(scale_hat_UV, residual_UV_hat)
 
             if self.args.cal_entropy_on_val:
                 self._masked_entropy(residual_Y_hat, scale_hat_Y, y_likelihoods_Y, residual_UV_hat, scale_hat_UV, y_likelihoods_UV)
             with autocast(enabled=amp):
-                #################### decoder Y ###########################
-                xY_reco, xU_reco, xV_reco = self._tiled_rec_from_latent_code(net_input, y_hat_Y, y_hat_UV, h_i, w_i, tile_manager_Y, tile_manager_UV_dec, args)
+                xY_reco, xU_reco, xV_reco = self._rec_from_latent_code(
+                    y_hat_Y, y_hat_UV, h_i, w_i, net_input, tile_manager_Y, tile_manager_UV_dec)
 
-            # reg_loss = self._regulation_loss(criterion, args, amp=False)
             val_infos = self._rd_loss(criterion,
                                       y_likelihoods_Y,
                                       y_likelihoods_UV,
@@ -1307,9 +1026,18 @@ class Net(nn.Module):
                                       args,
                                       is_train=False)
             if args.overfit:
-                rec_data = dict()
-                rec_data['xY'] = xY_reco
-                rec_data['xCb'] = xU_reco 
-                rec_data['xCr'] = xV_reco
-                val_infos['rec_data'] = rec_data
+                val_infos['rec_data'] = {'xY': xY_reco, 'xCb': xU_reco, 'xCr': xV_reco}
             return val_infos
+
+    def _masked_entropy(self, residual_Y_hat, scale_hat_Y, y_likelihoods_Y, residual_UV_hat, scale_hat_UV, y_likelihoods_UV):
+        _, masked_y_likelihoods_Y = self._skip_latent(residual_Y_hat, scale_hat_Y, y_likelihoods_Y, skip_thre=0.2, cube_flag_thre=1.0)
+        _, masked_y_likelihoods_UV = self._skip_latent(residual_UV_hat, scale_hat_UV, y_likelihoods_UV, skip_thre=0.2, cube_flag_thre=1.0)
+
+        latent_H_Y, latent_W_Y = masked_y_likelihoods_Y.shape[2], masked_y_likelihoods_Y.shape[3]
+        entropy_Y = torch.sum(-masked_y_likelihoods_Y.log2(), dim=(0, 2, 3)) / (latent_H_Y * latent_W_Y)
+
+        latent_H_UV, latent_W_UV = masked_y_likelihoods_UV.shape[2], masked_y_likelihoods_UV.shape[3]
+        entropy_UV = torch.sum(-masked_y_likelihoods_UV.log2(), dim=(0, 2, 3)) / (latent_H_UV * latent_W_UV)
+
+        self.channel_wise_entropy_Y += entropy_Y.squeeze()
+        self.channel_wise_entropy_UV += entropy_UV.squeeze()

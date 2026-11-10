@@ -44,7 +44,6 @@ from src.codec.coding_tools.interfaces import AttrsProxy, ToolEngine
 from src.codec.coding_tools.tiling import TileManager, TileManagerHyper
 from src.codec.coding_tools.ls_processing import LSProcessing
 ##
-from  src.codec.components.contexts.utils import Upsample_proc
 from src.codec.entropy_coding.header_module import HeaderCoder
 from .params import (CcsSepChannelParams, CcsSingleModelParams)
 from .common_modules import CommonEncDecModules
@@ -209,15 +208,8 @@ class SepChannelsSGMMTool(ToolEngine):
         img_shape = (1,1,img_height, img_width)
         full_img_shape = (1,1,full_img_height, full_img_width)
         # out_img_shape = (1,1,img_height*coeff, img_width*coeff)
-        latent_y_height = math.ceil(img_height / self.alignment_size)
-        latent_y_width = math.ceil(img_width / self.alignment_size)
-        latent_y_shape = (1, self.chs_ls, latent_y_height, latent_y_width)
-        latent_psi_height = math.ceil(img_height / (self.alignment_size * 2 ))
-        latent_psi_width = math.ceil(img_width / (self.alignment_size * 2 ))
-        latent_psi_shape = (1, self.chs_ls*4, latent_psi_height, latent_psi_width)
-        latent_z_height = math.ceil(img_height / (self.alignment_size * 4 ))
-        latent_z_width = math.ceil(img_width / (self.alignment_size * 4 ))
-        latent_z_shape = (1, self.chs_ls*4, latent_z_height, latent_z_width)
+        latent_y_shape, latent_psi_shape, latent_z_shape = tiling.get_latent_shapes(
+            img_height, img_width, self.alignment_size, self.chs_ls)
         self.get_base_tile_params(self.common_modules.tile_manager_hyper)
         self.cfg_update_for_conformance(full_img_height, full_img_width)
         
