@@ -40,8 +40,7 @@ from src.codec.coding_tools.core_models.CCS_SGMM.sep_chan_tool import \
 
 from src.codec.common import Decisions, tiling
 ##
-from src.codec.entropy_coding import ECLibLH, ECModule
-from src.codec.bitstream_structure import BitstreamStructure
+from src.codec.entropy_coding import create_lh_ecmodule
 from .rdlr_comp_base import RDLRCompBase
 
 
@@ -115,55 +114,59 @@ class RDLRCompY(RDLRCompBase):
                                only_rate: bool = False):
 
 
-        bs = BitstreamStructure(ECLibLH)
-        bs.encode_init()
-        ec = ECModule(bs)
-
         _, _, h, w = original.shape
+        common_modules = tool.common_modules
 
-        y = y_component_with_overlap.clone()
-        scale_log = decisions['scale_log'].clone()
-        resi_hat, residual_dq, y_hat = tool.common_modules._compress_ar_scale(y.clone(), decisions)
-        means_hat = y_hat - resi_hat
+        # Same residual derivation as the encoder: MCM prediction, gain unit, RVS and skip mask.
+        # resi_q holds the symbols that go to me-tANS, with a straight-through round so that the
+        # gradient reaches y.
+        resi_q, _, y_hat, _ = common_modules._compress_ar_scale(y_component_with_overlap,
+                                                                self._ar_scale_decisions(decisions))
 
-        y_new = y_hat
-        if sup_info is not None:
-            y_new2 = torch.cat((sup_info[:, :, ::2, ::2].detach(), y_new), dim=1)
-        else:
-            y_new2 = y_new
+        # Residual rate under the coder's own model: scale_log is the integer log-domain sigma
+        # index (after gain and RVS), which the entropy model maps to sigma itself in table mode.
+        scale_idx = decisions['scale_log']
+        if scale_idx.is_floating_point():
+            scale_idx = scale_idx.round().to(torch.int32)
+        y_likelihoods = common_modules.entropy(resi_q, scale_idx.to(resi_q.device), None)
+        rate_y = torch.sum(-torch.log2(y_likelihoods))
 
-        rec_Y_in = tool.decoder(y_new2, h=h, w=w)
-
-        resi = y - means_hat
-        scale_log2 = scale_log / pow(2,  tool.common_modules.hyper_scale_decoder.sigma_out_precision) # undo scaling to precision of HSD
-        scale_lin = self._index_to_scale(scale_log2, tool.common_modules.log_k, np.log(tool.common_modules.sigma_quant_min))
-
-        y_likelihoods = tool.common_modules.entropy(resi, scale_lin, torch.zeros_like(scale_lin))
-
-        measurements = {'x_hat': rec_Y_in, 'likelihoods': {'y': y_likelihoods, 'z': []}}
-        rate_y = torch.sum(-torch.log2(measurements['likelihoods']['y']))
-
-        if not only_rate:
-            rec_Y_in_optimized_part = tiling.get_data(rec_Y_in,
-                                                      optimized_part_of_imgtile_rel_to_overlap)
-            original_optimized_part = tiling.get_data(original,
-                                                      optimized_part_of_imgtile_rel_to_overlap)
-            metrics_Y = self.calc_distortion_loss(original_optimized_part, rec_Y_in_optimized_part,
-                                                  ['PSNR', 'MS-SSIM'])
-            current_psnrY = metrics_Y['PSNR']
-            current_msssimY = metrics_Y['MS-SSIM']
-
-        tool.common_modules.encode_z(ec, decisions, h, w, in_rdlr=True)
-
-        test_numBits_Y = bs.encode_term() + rate_y
-        img_shape = self.get_original_img_shape()
-        num_pixels = img_shape[-1] * img_shape[-2]
-        test_bpp_Y = test_numBits_Y / num_pixels
+        # z is not optimized, so its rate is a constant measured once per image (prepare_rate_model).
+        test_numBits_Y = rate_y + self.z_bits
+        test_bpp_Y = test_numBits_Y / (h * w)
 
         if only_rate:
             return test_bpp_Y, 0, 0
-        else:
-            return test_bpp_Y, current_psnrY, current_msssimY
+
+        rec_Y_in = tool.decoder(y_hat, h=h, w=w)
+        rec_Y_in_optimized_part = tiling.get_data(rec_Y_in, optimized_part_of_imgtile_rel_to_overlap)
+        original_optimized_part = tiling.get_data(original, optimized_part_of_imgtile_rel_to_overlap)
+        metrics_Y = self.calc_distortion_loss(original_optimized_part, rec_Y_in_optimized_part,
+                                              ['PSNR', 'MS-SSIM'])
+        return test_bpp_Y, metrics_Y['PSNR'], metrics_Y['MS-SSIM']
+
+    @staticmethod
+    def _ar_scale_decisions(decisions: Decisions) -> Decisions:
+        """Inputs of _compress_ar_scale built the same way as in
+        CommonEncDecModules.compress_ar_scale_tile, but for the whole image."""
+        ans = Decisions()
+        ans['psi'] = decisions['psi']
+        ans['skip_scale_log'] = decisions['skip_scale_log']
+        quantizer = decisions['quantizer']
+        ans['quantizer'] = Decisions()
+        ans['quantizer']['gain_unit'] = Decisions()
+        if 'rvs' in quantizer:
+            ans['quantizer']['rvs'] = {'scales': quantizer['rvs']['scales']}
+        if 'qual_map' in quantizer:
+            ans['quantizer']['qual_map'] = {'qp_map': quantizer['qual_map']['qp_map']}
+        return ans
+
+    def prepare_rate_model(self, tool: SepChannelsSGMMTool, decisions: Decisions,
+                           orig_tensor: torch.Tensor) -> None:
+        _, _, h, w = orig_tensor.shape
+        ec = create_lh_ecmodule()
+        tool.common_modules.encode_z(ec, decisions, h, w, in_rdlr=True)
+        self.z_bits = float(ec.get_total_bits())
 
     def get_ref_rate_data(self,
                           tool: SepChannelsSGMMTool,

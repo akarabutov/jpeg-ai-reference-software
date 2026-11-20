@@ -230,20 +230,25 @@ class RDLR(RdoPostProcInterface):
 
             lr = self.__calc_lr(num_samples)
 
+            if self.model_uv.numIteY > 0:
+                # RDLRCompUV still targets an older model (half-resolution chroma latent with
+                # subsampled luma latent as side information, old _compress_ar_scale signature).
+                self.logger.warning('RDLR for the secondary component is not supported by the '
+                                    'current model; numIteYChroma is ignored')
+
+            if self.model_y.numIteY == 0:
+                return decision
+
+            # compress() below needs an untouched copy of the input image
+            img_for_recompress = orig_img.clone()
+
             cur_img = orig_img
             cur_img.to_YUV_()
             cur_img.convert_range_(tool.get_internal_data_range())
-            cur_img.to_420_()
             img_y = cur_img.get_component('a')
-            img_uv = torch.cat((cur_img.get_component('b'), cur_img.get_component('c')), dim=1)
-
-            models_list = ['model_y', 'model_uv']
-            img_list = [img_y, img_uv]
-
-            sup_info = None
-            calc_additional_rate = None
-            _, _, img_height_y, img_width_y = img_y.shape
-            _, _, img_height_uv, img_width_uv = img_uv.shape
+            # The model codes luma padded to even size (CcsGvaeSGMM.compress), so y matches that size
+            _, _, h, w = img_y.shape
+            img_y = torch.nn.functional.pad(img_y, (0, w % 2, 0, h % 2), mode='replicate')
 
             # RDLR Y
             self.get_profilers().start('RDLR Y')
@@ -258,32 +263,12 @@ class RDLR(RdoPostProcInterface):
                                                       lr=lr,
                                                       lr_decay=self.LearningRateYDecay)
 
-            sup_info = decision_y_and_z.get('y_hat')[:, :, ::2, ::2]
-            decision.get('model_y').update(decision_y_and_z)
-
-            # keep Y rate for rdlr UV
-            calc_additional_rate = partial(self.get_luma_tile_rate,
-                                           rdlr_comp=self.model_y,
-                                           decisions=decision_y_and_z,
-                                           orig=img_y,
-                                           tool=sep_chan_tool_y)
+            decision.get('model_y')['y'] = decision_y_and_z['y']
             self.get_profilers().finish('RDLR Y')
 
-            # RDLR UV
-            self.get_profilers().start('RDLR UV')
-            sep_chan_tool_uv: SepChannelsSGMMTool = getattr(tool, 'model_uv')
-            sep_chan_tool_uv.decoder.float()
-
-            decision_z = decision.get('model_uv').clone()
-
-            decision_y_and_z = self.model_uv.process_y(sep_chan_tool_uv,
-                                                       decision_z,
-                                                       img_uv,
-                                                       sup_info=sup_info,
-                                                       lr=lr,
-                                                       lr_decay=self.LearningRateYDecay,
-                                                       calc_additional_rate=calc_additional_rate)
-            decision.get('model_uv').update(decision_y_and_z)
-            self.get_profilers().finish('RDLR UV')
+            # Regenerate every decision derived from y (y_hat, residuals, cube flags, tiles) with
+            # the regular encoder path; z and the beta/quantizer settings stay as they are.
+            with self.get_profilers_ctx('RDLR recompress'):
+                decision = tool.compress(img_for_recompress, decision)
 
         return decision

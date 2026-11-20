@@ -131,6 +131,11 @@ class RDLRCompBase(BaseEngine):
                           sup_info=None) -> List:
         pass
 
+    def prepare_rate_model(self, tool: ToolEngine, decisions: Decisions,
+                           orig_tensor: torch.Tensor) -> None:
+        """Hook called once per component before optimization, e.g. to measure constant rates."""
+        pass
+
     def _index_to_scale(self, index, log_k, log_b):
         scale = torch.exp(index * log_k + log_b)
         return scale
@@ -166,6 +171,15 @@ class RDLRCompBase(BaseEngine):
 
         image_tiles = self.tile_manager.image_tiles
         latent_tiles = self.tile_manager.latent_tiles
+
+        if len(image_tiles) > 1:
+            # The rate model passes the full-image psi/scale_log/quantizer decisions to
+            # _compress_ar_scale, so a latent tile smaller than the image would not match them.
+            self.logger.warning(f'RDLR supports a single tile only, got {len(image_tiles)} tiles; '
+                                'skipping RDLR for this component')
+            return decisions
+
+        self.prepare_rate_model(tool, decisions, orig_tensor)
 
         if self.trace_path:
             self.path_Y = {}
@@ -248,8 +262,8 @@ class RDLRCompBase(BaseEngine):
 
             best_decisions['y'] = tiling.assign_data(best_decisions['y'], optimized_part_of_lattile, best_y_tile)
 
-        _, _, h, w = orig_tensor.shape
-        _ = tool.common_modules._compress_y(best_decisions['y'], best_decisions, h=h, w=w)
+        # Only 'y' is updated here; the caller re-runs the model's compress() on the refined y
+        # to regenerate y_hat, residuals, cube flags and the tile decisions used for encoding.
 
         if self.trace_path:
             path_bpp = self.path_Y['bpp']
