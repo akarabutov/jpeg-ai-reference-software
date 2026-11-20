@@ -41,7 +41,66 @@ from src.codec.coding_tools.core_models.CCS_SGMM.sep_chan_tool import \
 from src.codec.common import Decisions, tiling
 ##
 from src.codec.entropy_coding import create_lh_ecmodule
+from src.codec.components.contexts.utils import ContextUtils
 from .rdlr_comp_base import RDLRCompBase
+
+
+class _CodedResidualRecorder:
+    """Records the scaled residual before rounding and the mask of coded elements while
+    CommonEncDecModules._compress_ar_scale runs.
+
+    Every residual quantization in that function goes through quant_dequant (directly, or via
+    the MCM context, which holds its own reference to it), once per MCM stage, or twice when
+    cube flags are derived first; the last call for a given input carries the final mask.
+    """
+    def __init__(self, common_modules):
+        self.cm = common_modules
+        self.calls = []
+
+    def __enter__(self):
+        cm = self.cm
+        self._orig = cm.quant_dequant
+
+        def recording_quant_dequant(data: torch.Tensor, tool_params: dict = None):
+            ans = self._orig(data, tool_params)
+            # same scaling and clipping as quant_dequant, without the rounding
+            cont = cm.quantizer.quantize_resi(data, tool_params['quantizer'])
+            info = torch.iinfo(torch.int16)
+            cont = torch.clamp(cont, info.min, info.max)
+            mask = tool_params['mask2']
+            mask = torch.ones_like(cont, dtype=torch.bool) if mask is None else mask.to(torch.bool)
+            if self.calls and self.calls[-1][0] is data:
+                self.calls[-1] = (data, cont, mask)
+            else:
+                self.calls.append((data, cont, mask))
+            return ans
+
+        cm.quant_dequant = recording_quant_dequant
+        if cm.use_context_module:
+            self._orig_ctx = cm.context.quantize_func
+            cm.context.quantize_func = recording_quant_dequant
+        return self
+
+    def __exit__(self, *args):
+        del self.cm.quant_dequant  # back to the bound method of the class
+        if self.cm.use_context_module:
+            self.cm.context.quantize_func = self._orig_ctx
+
+    def result(self, shape: torch.Size) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Continuous scaled residual and coded-element mask in the layout of the residual."""
+        conts = [c for _, c, _ in self.calls]
+        masks = [m for _, _, m in self.calls]
+        if self.cm.use_context_module:
+            num_stages = len(self.cm.context.MCM)
+            assert len(self.calls) == num_stages, f'expected one record per MCM stage ({num_stages}), got {len(self.calls)}'
+            cont, mask = ContextUtils.up_shuffle(conts), ContextUtils.up_shuffle(masks)
+        else:
+            assert len(self.calls) == 1, f'expected one residual quantization, got {len(self.calls)}'
+            cont, mask = conts[0], masks[0]
+        h, w = shape[-2:]
+        cont, mask = cont[..., :h, :w], mask[..., :h, :w].clone()
+        mask[:, self.cm.num_chs:] = False  # channels above num_chs are not coded
+        return cont, mask
 
 
 class RDLRCompY(RDLRCompBase):
@@ -115,21 +174,8 @@ class RDLRCompY(RDLRCompBase):
 
 
         _, _, h, w = original.shape
-        common_modules = tool.common_modules
 
-        # Same residual derivation as the encoder: MCM prediction, gain unit, RVS and skip mask.
-        # resi_q holds the symbols that go to me-tANS, with a straight-through round so that the
-        # gradient reaches y.
-        resi_q, _, y_hat, _ = common_modules._compress_ar_scale(y_component_with_overlap,
-                                                                self._ar_scale_decisions(decisions))
-
-        # Residual rate under the coder's own model: scale_log is the integer log-domain sigma
-        # index (after gain and RVS), which the entropy model maps to sigma itself in table mode.
-        scale_idx = decisions['scale_log']
-        if scale_idx.is_floating_point():
-            scale_idx = scale_idx.round().to(torch.int32)
-        y_likelihoods = common_modules.entropy(resi_q, scale_idx.to(resi_q.device), None)
-        rate_y = torch.sum(-torch.log2(y_likelihoods))
+        rate_y, y_hat = self.residual_rate(tool.common_modules, y_component_with_overlap, decisions)
 
         # z is not optimized, so its rate is a constant measured once per image (prepare_rate_model).
         test_numBits_Y = rate_y + self.z_bits
@@ -144,6 +190,38 @@ class RDLRCompY(RDLRCompBase):
         metrics_Y = self.calc_distortion_loss(original_optimized_part, rec_Y_in_optimized_part,
                                               ['PSNR', 'MS-SSIM'])
         return test_bpp_Y, metrics_Y['PSNR'], metrics_Y['MS-SSIM']
+
+    @classmethod
+    def residual_rate(cls, common_modules, y: torch.Tensor,
+                      decisions: Decisions) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Bits of the residual of y and the reconstructed latent y_hat.
+
+        The residual is derived as in the encoder (MCM prediction, gain unit, RVS, skip mask) and
+        only the elements that are actually coded are counted. The value is the rate of the
+        integer symbols under the coder's own model: scale_log is the integer log-domain sigma
+        index (after gain and RVS), which the entropy model maps to sigma in table mode.
+
+        The gradient is taken from the same model evaluated at the scaled residual before
+        rounding. The bin probability is flat at the bin centre, so through the rounded symbol
+        an element whose symbol is zero gets no gradient from its own rate (only, via MCM, from
+        the rate of later stages), and no element sees how far it is from a rounding boundary.
+        When every symbol is zero, as at low rates, the rate gradient is exactly zero.
+        """
+        ar_decisions = cls._ar_scale_decisions(decisions)
+        with _CodedResidualRecorder(common_modules) as recorder:
+            resi_q, _, y_hat, _ = common_modules._compress_ar_scale(y, ar_decisions)
+        resi_cont, coded = recorder.result(resi_q.shape)
+
+        scale_idx = decisions['scale_log']
+        if scale_idx.is_floating_point():
+            scale_idx = scale_idx.round().to(torch.int32)
+        scale_idx = scale_idx.to(resi_q.device)
+
+        bits_int = -torch.log2(common_modules.entropy(resi_q.detach(), scale_idx, None))
+        bits_cont = -torch.log2(common_modules.entropy(resi_cont, scale_idx, None))
+        bits_int = torch.sum(bits_int[coded])
+        bits_cont = torch.sum(bits_cont[coded])
+        return bits_int + (bits_cont - bits_cont.detach()), y_hat
 
     @staticmethod
     def _ar_scale_decisions(decisions: Decisions) -> Decisions:

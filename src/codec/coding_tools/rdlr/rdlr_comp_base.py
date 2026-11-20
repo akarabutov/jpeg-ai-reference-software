@@ -151,32 +151,17 @@ class RDLRCompBase(BaseEngine):
         lr_decay = kwargs.get('lr_decay')
 
         sup_info = kwargs.get('sup_info', None)
-        calc_additional_rate = kwargs.get('calc_additional_rate', None)
 
         PartialOptimizer = partial(torch.optim.Adagrad, lr=lr)
         PartialScheduler = partial(torch.optim.lr_scheduler.StepLR, step_size=1, gamma=lr_decay)
 
-        y = decisions.get('y')
-
-        self.tile_manager.set_alignment_size(tool.get_alignment_size() *
-                                             (2 if self.downsample_image else 1))
-
-        tile_min_size = self.tile_min_size_for_MSSSIM * (
-            2 if self.downsample_image else 1
-        ) + self.tile_manager.numSamplesTileOverlap if self.lossTypeBDcurveSlope_ratioPSNR_MSSSIM else None
-        self.tile_manager.setup_tiles_enc(orig_tensor.shape,
-                                          self.tile_manager.calc_latent_shape(
-                                              orig_tensor.shape, 1),
-                                          minimum_tile_size=tile_min_size)
-
-        image_tiles = self.tile_manager.image_tiles
-        latent_tiles = self.tile_manager.latent_tiles
-
-        if len(image_tiles) > 1:
-            # The rate model passes the full-image psi/scale_log/quantizer decisions to
-            # _compress_ar_scale, so a latent tile smaller than the image would not match them.
-            self.logger.warning(f'RDLR supports a single tile only, got {len(image_tiles)} tiles; '
-                                'skipping RDLR for this component')
+        _, _, img_h, img_w = orig_tensor.shape
+        num_samples_per_tile = self.tile_manager.numSamplesPerTile
+        if num_samples_per_tile != -1 and num_samples_per_tile < img_h * img_w:
+            # The rate model passes the whole-image psi/scale_log/quantizer decisions to
+            # _compress_ar_scale, so it cannot evaluate a part of the latent on its own.
+            self.logger.warning(f'RDLR works on the whole image only, but {img_h}x{img_w} exceeds '
+                                f'{num_samples_per_tile} samples per tile; skipping RDLR for this component')
             return decisions
 
         self.prepare_rate_model(tool, decisions, orig_tensor)
@@ -187,80 +172,48 @@ class RDLRCompBase(BaseEngine):
             self.path_Y['psnrY'] = []
             self.path_Y['msssim'] = []
             self.path_Y['lr'] = []
-            self.path_UV = {}
-            self.path_UV['bpp'] = []
-            self.path_UV['psnrU'] = []
-            self.path_UV['psnrV'] = []
-            self.path_UV['lr'] = []
 
-        component = 'UV' if sup_info is not None else 'Y'
-        self.logger.debug(f'RDLR {component} using these tiles:\n {repr(image_tiles)}')
-        for image_tile_with_overlap, latent_tile_with_overlap in zip(image_tiles, latent_tiles):
-            loss_best_tile = math.inf  # first rdlr iteration will redo qunatization of y to y_hat and hence effectively set loss to loss without RDLR. -> RDLR needs at least 2 iterations do change anything
-            cur_decisions = decisions.clone()
+        # Distortion is measured on the whole image
+        whole_image = tiling.Area.from_x_y_width_height(0, 0, img_w, img_h)
+        cur_decisions = decisions.clone()
+        y_start = decisions.get('y').detach()
 
-            _, optimized_part_of_imgtile_rel_to_overlap = self.tile_manager.get_core_of_overlapping_image_tile(
-                image_tile_with_overlap)
-            optimized_part_of_lattile, optimized_part_of_lattile_rel_to_overlap = self.tile_manager.get_core_of_overlapping_latent_tile(
-                latent_tile_with_overlap, image_tile_with_overlap)
+        # get starting rate point
+        ref_data = self.get_ref_rate_data(tool, cur_decisions, y_start, orig_tensor, whole_image, sup_info)
 
-            lat_suppinfo = tiling.get_data(
-                sup_info, latent_tile_with_overlap) if sup_info is not None else None
+        y_optimized = y_start.clone().requires_grad_()
+        optimizer = PartialOptimizer([{'params': y_optimized}])
+        scheduler = PartialScheduler(optimizer)
 
-            lat_tile = tiling.get_data(y, latent_tile_with_overlap)
-            im_tile = tiling.get_data(orig_tensor, image_tile_with_overlap)
+        if self.trace_path:
+            self.path_Y['bpp'] += [float(ref_data[0])]
+            self.path_Y['psnrY'] += [float(ref_data[1])]
+            self.path_Y['msssim'] += [float(ref_data[2])]
+            self.path_Y['lr'] += [optimizer.param_groups[0]['lr']]
 
-            best_y_tile = lat_tile.clone()
+        # The first iteration re-evaluates the starting point, so RDLR keeps the original y
+        # unless a later iteration has a lower loss.
+        loss_best = math.inf
+        best_y = y_start
+        for i in range(self.numIteY):
+            with torch.enable_grad():
+                # a copy, so that the evaluated point is not changed by optimizer.step()
+                y_cur = y_optimized.clone()
+                loss = self.rdlr_y_iteration(tool,
+                                             y_cur,
+                                             orig_tensor,
+                                             cur_decisions,
+                                             optimizer,
+                                             scheduler,
+                                             whole_image,
+                                             ref_data,
+                                             sup_info=sup_info)
+            if loss < loss_best:
+                best_y = y_cur.detach()
+                loss_best = loss
+            self.logger.debug(f'RDLR iteration {i}: loss {loss:.6f}, best {loss_best:.6f}')
 
-            cur_decisions['y'] = lat_tile
-
-            # get starting rate point
-            ref_data = self.get_ref_rate_data(tool, cur_decisions, lat_tile, im_tile,
-                                              optimized_part_of_imgtile_rel_to_overlap,
-                                              lat_suppinfo)
-            if calc_additional_rate is not None:
-                additional_rate = calc_additional_rate(
-                    latent_UV_tile_with_overlap=latent_tile_with_overlap,
-                    image_tile_UV_with_overlap=image_tile_with_overlap,
-                    optimized_part_of_imgUVtile_rel_to_overlap=
-                    optimized_part_of_imgtile_rel_to_overlap)
-                ref_data[0] += additional_rate
-                ref_data[3] += additional_rate
-
-            data = tiling.get_data(lat_tile, optimized_part_of_lattile_rel_to_overlap)
-            lat_tile_optimized_part = data.clone().requires_grad_()
-
-            optimizer = PartialOptimizer([{'params': lat_tile_optimized_part}])
-            scheduler = PartialScheduler(optimizer)
-
-            if self.trace_path:
-                self.path_Y['bpp'] += [float(ref_data[0])]
-                self.path_Y['psnrY'] += [float(ref_data[1])]
-                self.path_Y['msssim'] += [float(ref_data[2])]
-                self.path_Y['lr'] += [optimizer.param_groups[0]['lr']]
-
-            for i in range(self.numIteY):
-                with torch.enable_grad():
-                    lat_tile = lat_tile.detach()
-                    lat_tile = tiling.assign_data(lat_tile, optimized_part_of_lattile_rel_to_overlap,
-                                       lat_tile_optimized_part)
-
-                    loss = self.rdlr_y_iteration(tool,
-                                                 lat_tile,
-                                                 im_tile,
-                                                 cur_decisions,
-                                                 optimizer,
-                                                 scheduler,
-                                                 optimized_part_of_imgtile_rel_to_overlap,
-                                                 ref_data,
-                                                 sup_info=lat_suppinfo)
-
-                if loss < loss_best_tile:
-                    best_y_tile = tiling.get_data(
-                        cur_decisions.get('y').detach(), optimized_part_of_lattile_rel_to_overlap)
-                    loss_best_tile = loss
-
-            best_decisions['y'] = tiling.assign_data(best_decisions['y'], optimized_part_of_lattile, best_y_tile)
+        best_decisions['y'] = best_y.clone()
 
         # Only 'y' is updated here; the caller re-runs the model's compress() on the refined y
         # to regenerate y_hat, residuals, cube flags and the tile decisions used for encoding.
