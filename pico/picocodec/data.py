@@ -126,3 +126,26 @@ class CropDataset(Dataset):
         if random.random() < 0.5:
             x, m = x.flip(-1), m.flip(-1)
         return {"x": x, "mask": (m > 0.5).float()}
+
+
+class CenterCropDataset(Dataset):
+    """Validation images: centre crop to at most `max_size` and to a multiple
+    of `align` (the model needs multiples of 64).  Use batch_size=1."""
+
+    def __init__(self, roots: Sequence[str], max_size: int = 512, align: int = 64,
+                 max_images: Optional[int] = None):
+        files = list_images(roots)
+        self.files = files[:max_images] if max_images else files
+        self.max_size, self.align = max_size, align
+
+    def __len__(self) -> int:
+        return len(self.files)
+
+    def __getitem__(self, idx: int):
+        x = load_rgb(self.files[idx])
+        h = min(self.max_size, x.shape[1] // self.align * self.align)
+        w = min(self.max_size, x.shape[2] // self.align * self.align)
+        if h == 0 or w == 0:
+            raise ValueError(f"{self.files[idx]} is smaller than {self.align}px")
+        t, l = (x.shape[1] - h) // 2, (x.shape[2] - w) // 2
+        return {"x": x[:, t:t + h, l:l + w]}

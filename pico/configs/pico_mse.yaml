@@ -12,6 +12,8 @@ data:
   batch_size: 8
   num_workers: 8
   random_downscale: true
+  val_crop: 512          # validation: centre crop (multiple of 64)
+  val_max_images: 24
 
 train:
   seed: 0
@@ -21,10 +23,17 @@ train:
   lr_factors: [0.3, 0.1]     # paper: to 30% / 10% of the initial value
   aux_lr: 1.0e-3
   grad_clip: 1.0
-  amp: false
-  log_every: 100
-  val_every: 10000
-  ckpt_every: 10000
+  # Lightning Trainer
+  accelerator: auto
+  devices: 1
+  strategy: auto          # multi-GPU: ddp_find_unused_parameters_true
+  precision: 32-true      # or bf16-mixed (fp16 is not supported)
+  log_every: 100          # TensorBoard scalars, iterations
+  progress_every: 20
+  val_every: 10000        # iterations
+  val_levels: [0.0, 3.5, 7.0]
+  val_log_images: 4       # images written to TensorBoard per validation
+  ckpt_every: 10000       # iterations
 
 loss:
   phase: mse

@@ -7,6 +7,8 @@ numpy
 pillow
 pyyaml
 scipy
+lightning>=2.2
+tensorboard>=2.14
 pytest
 # optional, for scripts/make_text_masks.py:
 # easyocr

@@ -19,10 +19,12 @@ pico/
     model.py          Outer encoder/decoder, scale decoder, context decoder,
                       one-shot context model (2x2 grid), PICO (forward / compress / decompress)
     losses.py         rate + MSE + LPIPS + MS-SSIM + TilingArtifactLoss + TextFidelityLoss + GAN
-    discriminator.py  PatchGAN-дискриминатор увеличенной ёмкости
-    data.py           датасет случайных кропов (+ маски текста)
+    discriminator.py  PatchGAN-дискриминатор увеличенной ёмкости, GAN-лоссы, R1
+    lightning_module.py  LightningModule: шаги кодека и дискриминатора, валидация, логи
+    data.py           датасет случайных кропов (+ маски текста), валидационный датасет
     codec.py          тайлинг 504/512 и формат битстрима
-  train.py            обучение (фаза 1: MSE, фаза 2: perceptual + GAN)
+  train.py            обучение на PyTorch Lightning + TensorBoard
+                      (фаза 1: MSE, фаза 2: perceptual + GAN)
   pico_codec.py       CLI: encode / decode
   evaluate.py         оценка на папке с изображениями по реальным битстримам
   scripts/make_text_masks.py   маски текста детектором CRAFT (через EasyOCR)
@@ -39,6 +41,8 @@ pip install -r requirements.txt
 
 ## Обучение
 
+Обучение написано на **PyTorch Lightning**, логи пишутся в **TensorBoard**.
+
 ```bash
 # Фаза 1: только MSE (lr 8e-4, ×0.3 на 70%, ×0.1 на 90% шагов)
 python train.py -c configs/pico_mse.yaml --out runs/mse \
@@ -47,19 +51,136 @@ python train.py -c configs/pico_mse.yaml --out runs/mse \
 # (опционально) маски текста для TextFidelityLoss
 python scripts/make_text_masks.py --images /data/train --out /data/train_masks --gpu
 
-# Фаза 2: perceptual fine-tuning с инициализацией из фазы 1
-python train.py -c configs/pico_perceptual.yaml --out runs/perc --init runs/mse/last.pt \
+# Фаза 2: perceptual + GAN с инициализацией из фазы 1
+python train.py -c configs/pico_perceptual.yaml --out runs/perc \
+    --init runs/mse/checkpoints/last.ckpt \
     --set "data.train=[/data/train]" data.mask_root=/data/train_masks
+
+tensorboard --logdir runs
 ```
 
-Любой параметр конфига переопределяется через `--set key.sub=value` (значение
-разбирается как YAML). Продолжить прерванное обучение: `--resume runs/mse/last.pt`.
-Лог пишется в stdout и в `<out>/log.jsonl`.
+- Любой параметр конфига переопределяется через `--set key.sub=value`
+  (значение разбирается как YAML).
+- `--resume <ckpt>` продолжает обучение с полным состоянием: оптимизаторы,
+  расписания LR, дискриминатор, счётчик итераций.
+- `--init <ckpt>` загружает только веса кодека (переход от фазы 1 к фазе 2).
+- **Несколько GPU:** `--set train.devices=4 train.strategy=ddp_find_unused_parameters_true`.
+  `find_unused_parameters` нужен, потому что на шаге дискриминатора параметры
+  кодека не участвуют.
+- **Точность:** `train.precision=32-true` (по умолчанию) или `bf16-mixed`.
+  fp16 со скейлером не поддерживается, потому что градиенты клипаются вручную.
+
+**Чекпойнты** сохраняются в `<out>/checkpoints/` (`iter_<N>.ckpt` и `last.ckpt`).
+В каждый из них дополнительно кладётся «чистый» кодек (`model`, `model_cfg`),
+поэтому `pico_codec.py` и `evaluate.py` принимают `.ckpt` напрямую.
+
+**Что пишется в TensorBoard** (`<out>/tb/version_N`, одна точка на итерацию):
+
+| Тег | Что это |
+|---|---|
+| `train/loss`, `train/distortion`, `train/bpp`, `train/mse`, `train/psnr` | основной loss и его компоненты (средние по случайным уровням качества) |
+| `train/lpips`, `train/msssim_loss`, `train/tal`, `train/text_l1` | перцептивные члены (фаза 2) |
+| `train/aux_loss`, `train/grad_norm`, `train/lr`, `train/iteration` | служебные |
+| `train/gan/g_loss`, `train/gan/d_loss`, `train/gan/d_real_logit`, `train/gan/d_fake_logit`, `train/gan/d_acc`, `train/gan/r1`, `train/gan/weight` | GAN (см. ниже) |
+| `val/q{0,3.5,7}/bpp`, `val/q{…}/psnr` | валидация на уровнях `train.val_levels` |
+| `val_images/<i>` | оригинал и реконструкции на этих уровнях (слева направо) |
 
 Одна модель покрывает весь диапазон битрейтов. Каждому сэмплу в батче
 назначается случайный уровень `l ∈ {0, 0.1, …, 7.0}` (71 уровень), и для него
 берутся свои `λ_l` и `α_l`:
 `L = E_l[α_l·D(x, x̂_l) + α_l·λ_l·R]`.
+
+## Обучение с GAN (фаза 2)
+
+### Что сказано в статье (Sec. 4.2, App. C)
+
+- GAN заметно улучшает перцептивное качество. Но без pixel-matching и
+  перцептивных лоссов (MSE, LPIPS, MS-SSIM) он даёт артефакты и галлюцинации,
+  поэтому эти члены остаются и регуляризуют GAN.
+- Дискриминатор — патчевый, как PatchGAN (Isola et al.), но с бо́льшим числом
+  каналов и слоёв. Чем сильнее дискриминатор, тем лучше генерация.
+- Сильный дискриминатор при лёгком декодере делает обучение нестабильным. Статья
+  стабилизирует его двумя способами:
+  1. **двухфазное обучение**: сначала только MSE, чтобы GAN стартовал с разумной
+     инициализации;
+  2. **warm-up**: вес надзора от дискриминатора постепенно увеличивается, пока
+     дискриминатор ещё «молодой» и может сбить кодек с толку.
+- В областях текста GAN ослаблен, а вместо него действует тяжёлый L1
+  (TextFidelityLoss).
+
+Конкретных значений (веса, LR, архитектура дискриминатора, тип GAN-лосса)
+в статье нет. Всё ниже — наши настройки по умолчанию, они вынесены в
+`configs/pico_perceptual.yaml`.
+
+### Как устроена одна итерация
+
+Используется ручная оптимизация Lightning (`automatic_optimization = False`):
+
+```
+x, маски текста m, случайные уровни l ∈ {0, 0.1, …, 7}
+
+1) Шаг кодека (дискриминатор заморожен через toggle_optimizer):
+     x̂, likelihoods = PICO(x, l)
+     g_gan = generator_loss(D(x̂), m)                   # если w_gan(t) > 0
+     D_total = MSE + w1·LPIPS + w2·(1−MS-SSIM) + w3·TAL + w4·TextL1(m) + w_gan(t)·g_gan
+     L = mean_b[ α_l · (D_total + λ_l · bpp) ] + aux_loss(квантили entropy bottleneck)
+     backward → clip_grad_norm(параметры кодека, 1.0) → Adam.step
+
+2) Шаг дискриминатора (кодек заморожен):
+     d_loss = discriminator_loss(D(x), D(x̂.detach()))
+     каждые r1_every итераций: + 0.5 · γ · r1_every · E‖∇ₓD(x)‖²   (lazy R1)
+     backward → Adam.step
+
+3) Шаг расписаний LR кодека и дискриминатора (одни и те же точки снижения).
+```
+
+### Расписание веса GAN
+
+```
+w_gan(t) = 0                                            при t < gan_start_step
+         = w_gan · min(1, (t − gan_start_step + 1) / gan_warmup_steps)   иначе
+```
+
+- **`gan_start_step`** (по умолчанию 5000): разогрев дискриминатора. Он учится
+  с первой итерации, но кодек получает от него градиент только после этого
+  шага. Так кодек не подстраивается под ещё случайный дискриминатор.
+- **`gan_warmup_steps`** (20000): линейный рост веса — warm-up из статьи.
+- **`w_gan`** (1e-3): итоговый вес. Остальные члены измеряются на шкале
+  MSE по [0, 1], поэтому этот вес примерно соответствует β = 0.15 из HiFiC.
+
+### Лоссы и маска текста
+
+- `disc.loss: ns` — non-saturating: `D: softplus(−D(x)) + softplus(D(x̂))`,
+  `G: softplus(−D(x̂))`.
+- `disc.loss: hinge` — `D: relu(1 − D(x)) + relu(1 + D(x̂))`, `G: −D(x̂)`.
+- **Маска текста** уменьшается до сетки патчей дискриминатора через max-pool:
+  патч считается текстовым, если в нём есть хотя бы один пиксель текста. GAN-лосс
+  генератора в таких патчах умножается на `1 − m`, то есть выключается, а
+  фидельность текста обеспечивает TextFidelityLoss. Дискриминатор маску не видит.
+
+### Дискриминатор
+
+PatchGAN, вход переводится в [−1, 1]:
+
+- свёртки 4×4: 128 → 256 → 512 (stride 2) → 1024 (stride 1);
+- ещё одна свёртка 3×3 (1024 → 1024): это и есть «больше слоёв»;
+- выходная свёртка 4×4 → 1 логит на патч;
+- LeakyReLU(0.2) и spectral norm во всех свёртках;
+- рецептивное поле 86 пикселей, ≈ 20.5M параметров; на кропе 256×256 выход 30×30 логитов.
+
+Размеры задаются в `disc.arch`. Оптимизатор — Adam(lr 1e-4, betas 0.5/0.999),
+LR снижается в те же моменты, что и у кодека.
+
+### Что смотреть в TensorBoard и что делать при проблемах
+
+| Симптом | Что видно | Что попробовать |
+|---|---|---|
+| Дискриминатор «выиграл» | `gan/d_acc` ≈ 1, `gan/d_real_logit` ≫ 0 ≫ `gan/d_fake_logit`, `gan/g_loss` растёт | увеличить `gan_warmup_steps`, уменьшить `disc.lr`, включить `disc.r1_gamma` (0.1–10), уменьшить `disc.arch` |
+| Дискриминатор ничего не различает | `gan/d_acc` ≈ 0.5 долгое время, `gan/d_loss` ≈ 1.39 (= 2·ln 2) для `ns` | увеличить `disc.lr` или ёмкость, проверить `gan/weight` > 0 |
+| Галлюцинации, «шум» на гладких областях | на `val_images` видны паттерны, LPIPS падает, PSNR резко падает | уменьшить `w_gan`, увеличить `w_lpips` / MSE-часть |
+| Нестабильность, выбросы | скачки `train/grad_norm` и `gan/d_loss` | `disc.loss: hinge`, R1, меньший LR, `bf16-mixed` → `32-true` |
+| Цвет «плывёт» между тайлами | на стыках тайлов видна разница цвета | увеличить `w_tiling` (TAL) |
+| Текст нечитаем | плохие `train/text_l1` и примеры с текстом | посчитать маски (`make_text_masks.py`), увеличить `w_text` |
 
 ## Inference
 
@@ -118,8 +239,7 @@ scale decoder и энтропийное кодирование всегда вы
   TAL 0.02, текст 0.1. Длина warm-up GAN — 20k шагов.
 - **Начальный LR фазы 2** (1e-4), число шагов (1M + 500k), batch 8, кроп 256,
   аугментации (случайный даунскейл, горизонтальный флип).
-- **Дискриминатор**: безусловный, со spectral norm, non-saturating loss; Adam
-  lr 1e-4, betas (0.5, 0.999).
+- **Дискриминатор и детали GAN**: см. раздел «Обучение с GAN» выше.
 - **Инициализация**: s_out последней свёртки residual-ветки ConvScale311 равен 0.1.
   Последний слой предикторов инициализируется так, что μ≈0 и q≈1.
 
@@ -157,4 +277,8 @@ python -m pytest -q tests
 - побитовое совпадение символов после энтропийного кодирования и декодирования;
 - что one-shot context decode на стороне декодера воспроизводит латент энкодера;
 - тайлинг и детерминированность декодирования;
-- что `train.py` проходит обе фазы и CLI кодирует и декодирует полученным чекпойнтом.
+- расписание веса GAN, GAN-лоссы, маскирование текста и R1;
+- что `train.py` (Lightning) проходит обе фазы: в TensorBoard есть все скаляры
+  и картинки, по одной точке на итерацию; LR снижается как в статье; GAN
+  включается по расписанию; `--init`, `--resume` и чекпойнты работают; CLI
+  кодирует и декодирует прямо из `.ckpt`.

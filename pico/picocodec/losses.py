@@ -91,7 +91,8 @@ class LossConfig:
     w_tiling: float = 0.02                 # w3
     w_text: float = 0.1                    # w4
     w_gan: float = 1e-3                    # w5 (final value after warm-up)
-    gan_warmup_steps: int = 20_000
+    gan_start_step: int = 0        # codec gets no GAN gradient before this (D warm-up)
+    gan_warmup_steps: int = 20_000 # then the weight ramps linearly 0 -> w_gan
     tal_factors: Sequence[int] = (2, 4, 8, 16, 32)
     lpips_net: str = "vgg"
 
@@ -113,8 +114,11 @@ class RateDistortionLoss(nn.Module):
     def gan_weight(self, step: int) -> float:
         if self.cfg.phase != "perceptual":
             return 0.0
+        t = step - self.cfg.gan_start_step
+        if t < 0:
+            return 0.0
         warm = max(1, self.cfg.gan_warmup_steps)
-        return self.cfg.w_gan * min(1.0, step / warm)
+        return self.cfg.w_gan * min(1.0, (t + 1) / warm)
 
     def forward(
         self,
@@ -160,7 +164,6 @@ class RateDistortionLoss(nn.Module):
                 wg = self.gan_weight(step)
                 dist = dist + wg * gan_g_loss
                 logs["gan_g"] = gan_g_loss.mean()
-                logs["w_gan"] = torch.tensor(wg)
 
         loss = (alpha * (dist + lam * bpp)).mean()
         logs["loss"] = loss
