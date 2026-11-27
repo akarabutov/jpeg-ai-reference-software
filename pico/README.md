@@ -24,12 +24,13 @@ pico/
     data.py           датасет случайных кропов (+ маски текста), валидационный датасет
     codec.py          тайлинг 504/512 и формат битстрима
     quant.py          целочисленный (INT8/UINT8) scale decoder и его калибровка
+    textmask.py       маски текста: детекторы, тайлы, компоненты, фильтр распознаванием
   train.py            обучение на PyTorch Lightning + TensorBoard
                       (фаза 1: MSE, фаза 2: perceptual + GAN)
   pico_codec.py       CLI: encode / decode
   evaluate.py         оценка на папке с изображениями по реальным битстримам
   compute_metrics.py  все метрики loss-функции по каждому PNG датасета -> CSV
-  scripts/make_text_masks.py   маски текста детектором CRAFT (через EasyOCR)
+  scripts/make_text_masks.py   маски текста: CRAFT (EasyOCR) или PaddleOCR, по карте вероятностей
   scripts/quantize_scale_decoder.py   послойное квантование scale decoder в INT8/UINT8
   configs/pico_mse.yaml, configs/pico_perceptual.yaml
   tests/test_pico.py
@@ -373,8 +374,8 @@ python pico_codec.py decode -m runs/perc/pico_int.pt image.pico recon.png
   scale/context decoder ≈1.6M каждый, предикторы ≈1.3M. Вероятно, авторы
   считают параметры иначе или используют другие размеры, которые в статье не
   указаны (C, ширина вспомогательных сетей). Размеры настраиваются через `PICOConfig`.
-- **Маски текста** нужно посчитать заранее (`scripts/make_text_masks.py`). Без
-  них TextFidelityLoss отключён.
+- **Маски текста** нужно посчитать заранее (`scripts/make_text_masks.py`, см.
+  раздел «Маски текста»). Без них TextFidelityLoss отключён.
 - **LPIPS** при первом запуске скачивает веса VGG.
 
 ## Тесты
