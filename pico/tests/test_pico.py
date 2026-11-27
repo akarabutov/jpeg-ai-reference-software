@@ -356,6 +356,23 @@ def test_train_two_phases_tensorboard_and_cli(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     assert "determinism" in r.stdout and "identical" in r.stdout and "out(sigma)" in r.stdout
 
+    # ---- per-image metrics CSV ------------------------------------------- #
+    import csv
+    csv_path = tmp_path / "metrics.csv"
+    r = subprocess.run([sys.executable, str(ROOT / "compute_metrics.py"), "-m", str(ck2),
+                        "-d", str(imgs), "-q", "4", "--no-lpips", "--device", "cpu",
+                        "--out", str(csv_path)], cwd=ROOT, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    rows = list(csv.reader(open(csv_path)))
+    assert rows[0] == ["file", "bpp", "mse", "psnr", "lpips", "ms_ssim", "msssim_loss", "tal",
+                       "text_l1", "gan_g", "d_logit", "distortion", "rd_loss"]
+    assert [row[0] for row in rows[1:]] == [f"img{i}.png" for i in range(6)]
+    for row in rows[1:]:
+        vals = dict(zip(rows[0], row))
+        assert float(vals["bpp"]) > 0 and float(vals["psnr"]) > 0
+        assert vals["lpips"] == "" and vals["text_l1"] == ""  # disabled / no masks
+        assert vals["gan_g"] != ""  # phase-2 checkpoint has a discriminator
+
     # ---- encode / decode through the CLI with the Lightning checkpoint ---- #
     src = imgs / "img0.png"
     bit = tmp_path / "a.pico"

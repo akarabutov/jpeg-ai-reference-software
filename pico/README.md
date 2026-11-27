@@ -28,6 +28,7 @@ pico/
                       (фаза 1: MSE, фаза 2: perceptual + GAN)
   pico_codec.py       CLI: encode / decode
   evaluate.py         оценка на папке с изображениями по реальным битстримам
+  compute_metrics.py  все метрики loss-функции по каждому PNG датасета -> CSV
   scripts/make_text_masks.py   маски текста детектором CRAFT (через EasyOCR)
   scripts/quantize_scale_decoder.py   послойное квантование scale decoder в INT8/UINT8
   configs/pico_mse.yaml, configs/pico_perceptual.yaml
@@ -196,6 +197,46 @@ python evaluate.py -m runs/perc/last.pt -d /data/clic2020_test -q 0 1 2 3 4 5 6 
 При загрузке модели слои ConvScale и Haar сворачиваются в обычные свёртки
 (`--no-reparam` это отключает). Нейросетевые части работают на `--device`, а
 scale decoder и энтропийное кодирование всегда выполняются на CPU.
+
+## Метрики по датасету в CSV
+
+`compute_metrics.py` проходит по всем PNG в папке (рекурсивно). Для каждого
+изображения он делает реальное кодирование в битстрим и декодирование (с
+выходом в 8 бит) и считает все члены loss-функции теми же функциями, что при
+обучении. Результат — CSV, одна строка на изображение (или на пару изображение
+× уровень качества, если задано несколько `-q`):
+
+```bash
+python compute_metrics.py -m runs/perc/checkpoints/last.ckpt -d /data/kodak -q 3.5 \
+    --out kodak_metrics.csv
+python compute_metrics.py -m runs/perc/checkpoints/last.ckpt -d /data/clic -q 0 2 4 6 \
+    --masks /data/clic_masks --out clic_metrics.csv
+```
+
+Пример строки (чекпойнт короткого пробного обучения, `-q 3.6 --no-lpips`, без масок):
+
+```
+file,bpp,mse,psnr,lpips,ms_ssim,msssim_loss,tal,text_l1,gan_g,d_logit,distortion,rd_loss
+kodim15.png,0.867086,0.00322782,24.9109,,0.922942,0.0770578,0.0318503,,1.62707,-1.33124,0.00600048,0.00669333
+```
+
+| Столбец | Что это |
+|---|---|
+| `file` | путь относительно `-d` |
+| `quality` | уровень качества; столбец есть, только если `-q` задано несколько раз |
+| `bpp` | реальный размер битстрима: бит / пиксель |
+| `mse`, `psnr` | по изображениям в [0, 1] |
+| `lpips` | LPIPS-VGG, как в loss (`--no-lpips` — пропустить: при первом запуске скачиваются веса VGG) |
+| `ms_ssim`, `msssim_loss` | MS-SSIM и член loss `1 − MS-SSIM` |
+| `tal` | TilingArtifactLoss |
+| `text_l1` | TextFidelityLoss; нужен `--masks` (те же относительные пути, `.png`); если файла маски нет, считается, что текста нет |
+| `gan_g`, `d_logit` | GAN-лосс кодека и средний логит дискриминатора на реконструкции. Дискриминатор берётся из Lightning-чекпойнта фазы 2, с учётом маски текста |
+| `distortion`, `rd_loss` | `D` и `α_l·(D + λ_l·bpp)` с весами, λ и α из конфига чекпойнта (`--loss-config` переопределяет); в суммы входят только доступные члены |
+
+Пустая ячейка значит, что метрика недоступна. CSV пишется построчно, поэтому
+при прерывании готовые строки сохраняются. В конце печатаются средние по
+каждому уровню качества. `--no-8bit` считает метрики по float-реконструкции,
+а не по 8-битной.
 
 ## Квантование scale decoder
 
