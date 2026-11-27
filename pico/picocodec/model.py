@@ -321,6 +321,9 @@ class PICO(nn.Module):
         # Learned level-conditional channel-wise gain on the latent (App. F),
         # stored in log-space, interpolated across levels.
         self.log_gain = nn.Parameter(torch.zeros(NUM_COARSE_LEVELS, cfg.latent_channels))
+        # Optional integer-only scale decoder (picocodec.quant.QuantScaleDecoder),
+        # attached with `set_int_scale_decoder`; not part of the state dict.
+        self.int_scale_decoder = None
 
     # ---- helpers ---------------------------------------------------------- #
     def gain(self, lw: torch.Tensor) -> torch.Tensor:
@@ -378,6 +381,22 @@ class PICO(nn.Module):
         dev = next(self.scale_decoder.parameters()).device
         return self.scale_decoder(z_hat.detach().to(dev, torch.float32)).cpu()
 
+    def set_int_scale_decoder(self, qsd) -> None:
+        """Use an integer-only scale decoder for the CDF indexes (bit-exact
+        across platforms).  Rebuilds the CDF tables for its scale table."""
+        self.int_scale_decoder = qsd
+        if qsd is not None:
+            self.update(scale_table=qsd.scale_table, force=True)
+
+    @torch.no_grad()
+    def scale_indexes(self, z_hat: torch.Tensor) -> torch.Tensor:
+        """CDF indexes for y from the decoded hyper latent (CPU, deterministic)."""
+        if self.int_scale_decoder is not None:
+            med = self.entropy_bottleneck._get_medians().detach().view(1, -1, 1, 1).cpu()
+            k = torch.round(z_hat.detach().cpu() - med).to(torch.int64)
+            return self.int_scale_decoder(k)
+        return self.gaussian_conditional.build_indexes(self.deterministic_sigma(z_hat))
+
     @torch.no_grad()
     def compress(self, x: torch.Tensor, level: float) -> Dict:
         """Encode a batch of tiles at one quality level.
@@ -389,8 +408,7 @@ class PICO(nn.Module):
         y, z = self.encoder(x, lw)
         z_strings = self.entropy_bottleneck.compress(z.cpu())
         z_hat = self.entropy_bottleneck.decompress(z_strings, z.shape[-2:])
-        sigma = self.deterministic_sigma(z_hat)
-        indexes = self.gaussian_conditional.build_indexes(sigma)
+        indexes = self.scale_indexes(z_hat)
         p = self.context_decoder(z_hat.to(dev))
         sym, _ = self.context.encode(y * self.gain(lw), p)
         y_strings = self.gaussian_conditional.compress(sym.cpu(), indexes)
@@ -402,8 +420,7 @@ class PICO(nn.Module):
         y_strings, z_strings = strings
         dev = device or next(self.decoder.parameters()).device
         z_hat = self.entropy_bottleneck.decompress(z_strings, shape)
-        sigma = self.deterministic_sigma(z_hat)
-        indexes = self.gaussian_conditional.build_indexes(sigma)
+        indexes = self.scale_indexes(z_hat)
         sym = self.gaussian_conditional.decompress(y_strings, indexes)
         lw = level_weights(torch.full((len(y_strings),), float(level), device=dev))
         p = self.context_decoder(z_hat.to(dev))

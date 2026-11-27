@@ -180,6 +180,99 @@ def test_gan_losses_and_r1():
     assert r1.item() > 0 and next(d.parameters()).grad is not None
 
 
+# --------------------------------------------------------------------------- #
+# integer scale decoder
+# --------------------------------------------------------------------------- #
+def _calibrated(seed=0, n=16):
+    from picocodec.layers import level_weights as lw_fn
+    from picocodec.model import default_scale_table
+    from picocodec.quant import QuantScaleDecoder
+    model = tiny_model(seed)
+    randomize_scales(model.scale_decoder)
+    model.eval()
+    torch.manual_seed(seed)
+    x = torch.rand(n, 3, 128, 128)
+    lw = lw_fn(torch.linspace(0, 7, n))
+    with torch.no_grad():
+        _, z = model.encoder(x, lw)
+    med = model.entropy_bottleneck._get_medians().detach().view(-1)
+    # random encoder -> tiny hyper latents; spread them like a trained model would
+    k = torch.round(z * 8 + torch.randn_like(z) * 2)
+    table = default_scale_table()
+    qsd, report = QuantScaleDecoder.calibrate(model.scale_decoder, k, med, table)
+    return model, qsd, report, k, med, table
+
+
+def test_float_ops_match_scale_decoder():
+    from picocodec.quant import float_forward, float_ops
+    model = tiny_model()
+    randomize_scales(model.scale_decoder)
+    z = torch.randn(2, 32, 4, 4)
+    ref = model.scale_decoder(z).double()
+    assert torch.allclose(float_forward(float_ops(model.scale_decoder), z), ref, rtol=1e-4, atol=1e-5)
+    reparameterize_module(model.scale_decoder)  # also works after reparameterisation
+    assert torch.allclose(float_forward(float_ops(model.scale_decoder), z), ref, rtol=1e-4, atol=1e-5)
+
+
+def test_fixed_point_and_requantize():
+    from picocodec.quant import fixed_point, requantize
+    m = torch.tensor([1e-4, 0.37, 1.0, 5.5])
+    m0, sh = fixed_point(m)
+    assert torch.allclose(m0.double() / 2.0 ** sh.double(), m.double(), rtol=1e-8)
+    acc = torch.randint(-100000, 100000, (2, 4, 3, 3))
+    out = requantize(acc, m0, sh, 128)
+    ref = (torch.floor(acc.double() * m.double().view(1, -1, 1, 1) + 0.5) + 128).clamp(0, 255)
+    assert (out.double() - ref).abs().max() <= 1  # exact up to rounding of M itself
+
+
+def test_int_scale_decoder_matches_float_and_is_deterministic():
+    from picocodec.quant import QuantScaleDecoder, float_indexes
+    model, qsd, report, k, med, table = _calibrated()
+    assert report[-1]["layer"] == "out(sigma)" and report[-1]["sqnr_db"] > 15
+    with torch.no_grad():
+        sigma = model.scale_decoder(k + med.view(1, -1, 1, 1))
+    idx_f = float_indexes(sigma, table)
+    idx_q = qsd(k)
+    assert idx_q.dtype == torch.int32 and idx_q.shape == sigma.shape  # y resolution
+    diff = (idx_q.long() - idx_f.long()).abs()
+    # random (untrained) tiny model; a trained model gives ~96% exact agreement
+    assert (diff == 0).float().mean() > 0.7 and diff.max() <= 3
+    # bit-exact regardless of threads and batch composition
+    n = torch.get_num_threads()
+    torch.set_num_threads(1)
+    single = torch.cat([qsd(k[i:i + 1]) for i in range(len(k))])
+    torch.set_num_threads(n)
+    assert torch.equal(single, idx_q)
+    # serialisation round trip
+    q2 = QuantScaleDecoder.from_dict(qsd.to_dict())
+    assert torch.equal(q2(k), idx_q)
+
+
+def test_float_indexes_match_compressai():
+    from picocodec.model import default_scale_table
+    from picocodec.quant import float_indexes
+    model = tiny_model()
+    model.update(force=True)
+    sigma = torch.rand(2, 32, 4, 4) * 30
+    assert torch.equal(float_indexes(sigma, default_scale_table()),
+                       model.gaussian_conditional.build_indexes(sigma))
+
+
+def test_codec_with_int_scale_decoder():
+    model, qsd, *_ = _calibrated()
+    model.update(force=True)
+    model.to_inference("cpu")
+    x = torch.rand(3, 200, 300)
+    ref = decode_image(model, encode_image(model, x, 3.0))
+    model.set_int_scale_decoder(qsd)
+    data = encode_image(model, x, 3.0)
+    rec = decode_image(model, data)
+    assert torch.equal(rec, ref)  # sigma only affects the rate, not the reconstruction
+    model.set_int_scale_decoder(None)
+    with pytest.raises(ValueError, match="integer scale decoder"):
+        decode_image(model, data)
+
+
 def _make_images(folder: Path, n=6, size=(200, 180)):
     folder.mkdir(parents=True)
     rng = np.random.default_rng(0)
@@ -254,13 +347,23 @@ def test_train_two_phases_tensorboard_and_cli(tmp_path):
     _train(tmp_path, "pico_perceptual.yaml", run2, imgs, ["--resume", str(ck2)], steps=6)
     assert torch.load(ck2, map_location="cpu", weights_only=False)["iteration"] == 6
 
+    # ---- integer scale decoder ------------------------------------------- #
+    ck_int = tmp_path / "pico_int.pt"
+    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "quantize_scale_decoder.py"),
+                        "-m", str(ck2), "--calib", str(imgs), "--num-crops", "4",
+                        "--num-val-crops", "2", "--crop", "128", "--out", str(ck_int),
+                        "--device", "cpu"], cwd=ROOT, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "determinism" in r.stdout and "identical" in r.stdout and "out(sigma)" in r.stdout
+
     # ---- encode / decode through the CLI with the Lightning checkpoint ---- #
     src = imgs / "img0.png"
     bit = tmp_path / "a.pico"
     rec = tmp_path / "a.png"
-    for args in (["encode", "-m", str(ck2), "-q", "5", str(src), str(bit), "--device", "cpu"],
-                 ["decode", "-m", str(ck2), str(bit), str(rec), "--device", "cpu"]):
-        r = subprocess.run([sys.executable, str(ROOT / "pico_codec.py"), *args],
-                           cwd=ROOT, capture_output=True, text=True)
-        assert r.returncode == 0, r.stdout + r.stderr
-    assert Image.open(rec).size == Image.open(src).size
+    for ck in (ck2, ck_int):
+        for args in (["encode", "-m", str(ck), "-q", "5", str(src), str(bit), "--device", "cpu"],
+                     ["decode", "-m", str(ck), str(bit), str(rec), "--device", "cpu"]):
+            r = subprocess.run([sys.executable, str(ROOT / "pico_codec.py"), *args],
+                               cwd=ROOT, capture_output=True, text=True)
+            assert r.returncode == 0, r.stdout + r.stderr
+        assert Image.open(rec).size == Image.open(src).size

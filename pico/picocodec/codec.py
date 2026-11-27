@@ -8,8 +8,11 @@ of 64 that fits.  The decoder reconstructs each tile independently and crops
 the margin away.
 
 Bitstream layout (big endian):
-    magic "PICO" | version u8 | height u32 | width u32 | fine level u8 |
+    magic "PICO" | version u8 | height u32 | width u32 | fine level u8 | flags u8 |
     for every tile in raster order: len(z) u32, z bytes, len(y) u32, y bytes
+
+flags bit 0: CDF indexes come from the integer-only scale decoder
+(picocodec.quant); such streams can only be decoded with it, and vice versa.
 """
 
 from __future__ import annotations
@@ -27,7 +30,10 @@ from .layers import fine_index_to_level, level_to_fine_index
 from .model import PICO
 
 MAGIC = b"PICO"
-VERSION = 1
+VERSION = 2
+HEADER = ">BIIBB"
+HEADER_SIZE = 4 + struct.calcsize(HEADER)
+FLAG_INT_SCALE_DECODER = 1
 TILE = 504
 MARGIN = 4
 ALIGN = 64  # total downsampling factor of the hyper latent
@@ -93,7 +99,8 @@ def encode_image(model: PICO, x: torch.Tensor, level: float, device=None) -> byt
     _, _, H, W = x.shape
     buf = io.BytesIO()
     buf.write(MAGIC)
-    buf.write(struct.pack(">BIIB", VERSION, H, W, fine))
+    flags = FLAG_INT_SCALE_DECODER if model.int_scale_decoder is not None else 0
+    buf.write(struct.pack(HEADER, VERSION, H, W, fine, flags))
     for t in tile_grid(H, W):
         out = model.compress(extract_tile(x, t).to(device), lvl)
         y_strings, z_strings = out["strings"]
@@ -102,22 +109,30 @@ def encode_image(model: PICO, x: torch.Tensor, level: float, device=None) -> byt
     return buf.getvalue()
 
 
-def read_header(data: bytes) -> Tuple[int, int, int]:
+def read_header(data: bytes) -> Tuple[int, int, int, int]:
+    """-> (height, width, fine level index, flags)."""
     if data[:4] != MAGIC:
         raise ValueError("not a PICO bitstream")
-    version, H, W, fine = struct.unpack(">BIIB", data[4:14])
+    version = data[4]
     if version != VERSION:
         raise ValueError(f"unsupported bitstream version {version}")
-    return H, W, fine
+    _, H, W, fine, flags = struct.unpack(HEADER, data[4:HEADER_SIZE])
+    return H, W, fine, flags
 
 
 @torch.no_grad()
 def decode_image(model: PICO, data: bytes, device=None) -> torch.Tensor:
     """-> [3, H, W] in [0, 1]."""
-    H, W, fine = read_header(data)
+    H, W, fine, flags = read_header(data)
+    uses_int = bool(flags & FLAG_INT_SCALE_DECODER)
+    if uses_int != (model.int_scale_decoder is not None):
+        raise ValueError(
+            "bitstream was encoded with the " + ("integer" if uses_int else "float")
+            + " scale decoder, but the model uses the "
+            + ("integer" if model.int_scale_decoder is not None else "float") + " one")
     lvl = fine_index_to_level(fine)
     device = device or next(model.decoder.parameters()).device
-    buf = io.BytesIO(data[14:])
+    buf = io.BytesIO(data[HEADER_SIZE:])
     out = torch.zeros(3, H, W)
     for t in tile_grid(H, W):
         z = _read_bytes(buf)
