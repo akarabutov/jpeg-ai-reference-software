@@ -1,0 +1,12 @@
+torch>=2.1
+torchvision>=0.16
+compressai>=1.2.6
+lpips>=0.1.4
+pytorch-msssim>=1.0.0
+numpy
+pillow
+pyyaml
+scipy
+pytest
+# optional, for scripts/make_text_masks.py:
+# easyocr

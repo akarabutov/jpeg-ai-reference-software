@@ -1,0 +1,50 @@
+# Phase 2: perceptual fine-tuning (Sec. 4.2, App. C).  Start from phase 1:
+#   python train.py -c configs/pico_perceptual.yaml --init runs/mse/last.pt --out runs/perc
+# Values marked "paper" come from arXiv:2605.05148; everything else is our
+# choice because the paper does not specify it.
+
+model: {}
+
+data:
+  train: [/path/to/train_images]
+  val: null
+  mask_root: null      # precomputed CRAFT text masks (scripts/make_text_masks.py)
+  crop_size: 256
+  batch_size: 8
+  num_workers: 8
+  random_downscale: true
+
+train:
+  seed: 0
+  steps: 500000
+  lr: 1.0e-4                      # initial lr of phase 2 is not given in the paper
+  lr_milestones: [0.3, 0.6, 0.8]  # paper
+  lr_factors: [0.5, 0.3, 0.1]     # paper
+  aux_lr: 1.0e-3
+  grad_clip: 1.0
+  amp: false
+  log_every: 100
+  val_every: 10000
+  ckpt_every: 10000
+
+loss:
+  phase: perceptual
+  alphas: [1, 1, 1, 1, 1, 1, 1, 1]
+  w_lpips: 0.0066        # w1
+  w_msssim: 0.0066       # w2
+  w_tiling: 0.02         # w3  TilingArtifactLoss
+  w_text: 0.1            # w4  TextFidelityLoss (needs data.mask_root)
+  w_gan: 0.001           # w5  final GAN weight
+  gan_warmup_steps: 20000  # linear warm-up of the GAN weight (paper: "gradually")
+  tal_factors: [2, 4, 8, 16, 32]
+  lpips_net: vgg
+
+disc:
+  lr: 1.0e-4
+  betas: [0.5, 0.999]
+  arch:                   # "PatchGAN with more channels and conv layers"
+    base_channels: 128
+    num_layers: 4
+    max_channels: 1024
+    extra_layers: 1
+    use_spectral_norm: true

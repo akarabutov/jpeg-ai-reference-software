@@ -1,0 +1,34 @@
+# Phase 1: MSE-only training (Sec. 3.3, App. C).
+# Values marked "paper" come from arXiv:2605.05148; everything else is our
+# choice because the paper does not specify it.
+
+model: {}            # PICOConfig overrides (defaults = Table 3 / Fig. 4, 11)
+
+data:
+  train: [/path/to/train_images]   # e.g. DIV2K, CLIC, Flickr2K (+ your own data)
+  val: null                        # e.g. /path/to/clic2020_professional_valid
+  mask_root: null                  # not used in phase 1
+  crop_size: 256
+  batch_size: 8
+  num_workers: 8
+  random_downscale: true
+
+train:
+  seed: 0
+  steps: 1000000
+  lr: 8.0e-4                 # paper
+  lr_milestones: [0.7, 0.9]  # paper: decay at 70% / 90% of training
+  lr_factors: [0.3, 0.1]     # paper: to 30% / 10% of the initial value
+  aux_lr: 1.0e-3
+  grad_clip: 1.0
+  amp: false
+  log_every: 100
+  val_every: 10000
+  ckpt_every: 10000
+
+loss:
+  phase: mse
+  # lambda_l per coarse level 0..7 (rate multiplier, MSE on [0,1]); defaults:
+  # CompressAI MSE lambdas, level 0 = lowest quality.  Uncomment to override.
+  # rate_lambdas: [8.54e-3, 4.39e-3, 2.30e-3, 1.18e-3, 6.15e-4, 3.18e-4, 1.65e-4, 8.54e-5]
+  alphas: [1, 1, 1, 1, 1, 1, 1, 1]
